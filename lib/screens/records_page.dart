@@ -1,0 +1,101 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../logic/jetlag_clock.dart';
+import '../models/jetlag_schedule.dart';
+import '../notifications/jetlag_alert_channel.dart';
+import '../state/jetlag_guide_controller.dart';
+import '../theme/jetlag_theme.dart';
+import '../widgets/inline_log_chip.dart';
+import '../widgets/timezone_picker.dart';
+
+class RecordsPage extends StatelessWidget {
+  const RecordsPage({super.key, required this.controller});
+
+  final JetlagGuideController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final logs = [...controller.logs]
+      ..sort((a, b) => b.atUtc.compareTo(a.atUtc));
+    return ListView(
+      key: const ValueKey('jetlag-records-page'),
+      primary: false,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+      children: [
+        const Text('직군', style: JetlagTheme.caption),
+        const SizedBox(height: 8),
+        SegmentedButton<JetlagCrewRole>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: JetlagCrewRole.flightOps, label: Text('운항')),
+            ButtonSegment(value: JetlagCrewRole.cabin, label: Text('객실')),
+          ],
+          selected: {controller.role},
+          onSelectionChanged: (next) {
+            if (next.isEmpty) return;
+            controller.setRole(next.first);
+          },
+        ),
+        const SizedBox(height: 16),
+        const Text('기준 시간대', style: JetlagTheme.caption),
+        const SizedBox(height: 8),
+        TimezonePicker(
+          selected: controller.homeBaseTimezone,
+          onChanged: controller.setHomeBaseTimezone,
+        ),
+        if (controller.homeBaseRecovered)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              '저장된 기준 시간대를 읽지 못해 서울(Asia/Seoul)로 되돌렸습니다.',
+              style: JetlagTheme.micro,
+            ),
+          ),
+        const SizedBox(height: 16),
+        SwitchListTile(
+          key: const ValueKey('jetlag-alert-switch'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('픽업 알림', style: JetlagTheme.body),
+          subtitle: const Text(
+            '90분 전 · 채널 ${JetlagAlertChannel.id}',
+            key: ValueKey('jetlag-alert-channel'),
+            style: JetlagTheme.caption,
+          ),
+          value: controller.alertsEnabled,
+          onChanged: (enabled) {
+            final messenger = ScaffoldMessenger.of(context);
+            unawaited(() async {
+              final ok = await controller.setAlertsEnabled(enabled);
+              if (!ok) {
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('알림 권한이 없어 채널을 켜지 못했습니다')),
+                );
+              }
+            }());
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text('기록', style: JetlagTheme.caption),
+        const SizedBox(height: 8),
+        if (logs.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('아직 기록이 없습니다', style: JetlagTheme.body),
+          )
+        else
+          for (final log in logs) ...[
+            InlineLogChip(
+              log: log,
+              clock: formatHm(log.atUtc, controller.schedule.localTimeZone),
+              onDismiss: () => controller.removeLog(log.id),
+            ),
+            const SizedBox(height: 8),
+          ],
+        const SizedBox(height: 8),
+        const Text(JetlagTheme.disclaimer, style: JetlagTheme.micro),
+      ],
+    );
+  }
+}
