@@ -6,14 +6,12 @@ import '../theme/jetlag_theme.dart';
 class QuickLogBar extends StatelessWidget {
   const QuickLogBar({
     super.key,
-    required this.sleeping,
-    required this.onCoffee,
+    required this.onCaffeine,
     required this.onMeal,
     required this.onSleep,
   });
 
-  final bool sleeping;
-  final VoidCallback onCoffee;
+  final VoidCallback onCaffeine;
   final VoidCallback onMeal;
   final VoidCallback onSleep;
 
@@ -23,11 +21,11 @@ class QuickLogBar extends StatelessWidget {
       children: [
         Expanded(
           child: _Button(
-            key: const ValueKey('log-coffee'),
+            key: const ValueKey('log-caffeine'),
             icon: Icons.local_cafe,
-            label: '커피',
+            label: '카페인',
             color: JetlagTheme.caffeine,
-            onPressed: onCoffee,
+            onPressed: onCaffeine,
           ),
         ),
         const SizedBox(width: 8),
@@ -44,8 +42,8 @@ class QuickLogBar extends StatelessWidget {
         Expanded(
           child: _Button(
             key: const ValueKey('log-sleep'),
-            icon: sleeping ? Icons.wb_sunny_outlined : Icons.bed,
-            label: sleeping ? '기상' : '수면',
+            icon: Icons.bed,
+            label: '수면',
             color: JetlagTheme.sleep,
             onPressed: onSleep,
           ),
@@ -103,7 +101,7 @@ class _Button extends StatelessWidget {
 
 IconData iconForLog(CrewLogKind kind) {
   switch (kind) {
-    case CrewLogKind.coffee:
+    case CrewLogKind.caffeine:
       return Icons.local_cafe;
     case CrewLogKind.meal:
       return Icons.restaurant;
@@ -116,7 +114,7 @@ IconData iconForLog(CrewLogKind kind) {
 
 Color colorForLog(CrewLogKind kind) {
   switch (kind) {
-    case CrewLogKind.coffee:
+    case CrewLogKind.caffeine:
       return JetlagTheme.caffeine;
     case CrewLogKind.meal:
       return JetlagTheme.meal;

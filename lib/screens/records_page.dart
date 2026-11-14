@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../logic/jetlag_clock.dart';
+import '../models/crew_log.dart';
 import '../models/jetlag_schedule.dart';
 import '../notifications/jetlag_alert_channel.dart';
 import '../state/jetlag_guide_controller.dart';
 import '../theme/jetlag_theme.dart';
 import '../widgets/inline_log_chip.dart';
 import '../widgets/timezone_picker.dart';
+import '../widgets/user_settings_form.dart';
 
 class RecordsPage extends StatelessWidget {
   const RecordsPage({super.key, required this.controller});
@@ -54,6 +56,11 @@ class RecordsPage extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 16),
+        UserSettingsForm(
+          settings: controller.settings,
+          onChanged: controller.setUserSettings,
+        ),
+        const SizedBox(height: 8),
         SwitchListTile(
           key: const ValueKey('jetlag-alert-switch'),
           contentPadding: EdgeInsets.zero,
@@ -76,6 +83,34 @@ class RecordsPage extends StatelessWidget {
             }());
           },
         ),
+        const SizedBox(height: 8),
+        const Text('수면 기록', style: JetlagTheme.caption),
+        const SizedBox(height: 8),
+        if (controller.sleepLogs.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Text('입력한 수면이 없습니다', style: JetlagTheme.body),
+          )
+        else
+          for (final sleep in controller.sleepLogs.reversed) ...[
+            InlineLogChip(
+              log: CrewLog(
+                id: sleep.id,
+                atUtc: sleep.startUtc,
+                kind: CrewLogKind.sleep,
+                scheduleKey: sleep.scheduleKey,
+              ),
+              clock: controller.hasSchedule
+                  ? formatRange(
+                      sleep.startUtc,
+                      sleep.endUtc,
+                      controller.schedule.localTimeZone,
+                    )
+                  : formatRange(sleep.startUtc, sleep.endUtc, 'UTC'),
+              onDismiss: () => controller.removeSleepLog(sleep.id),
+            ),
+            const SizedBox(height: 8),
+          ],
         const SizedBox(height: 8),
         const Text('기록', style: JetlagTheme.caption),
         const SizedBox(height: 8),

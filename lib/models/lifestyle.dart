@@ -6,10 +6,6 @@ enum JetlagLifestyle {
 
   static const preferenceKey = 'jetlag_guide_lifestyle';
 
-  static const bedMinute = 21 * 60;
-  static const wakeMinute = 5 * 60;
-  static const hybridCap = Duration(hours: 2);
-
   /// Anchor segment reads `$homeBaseTimezone 유지`. [homeBaseTimezone] is the
   /// saved IANA id, so the switcher tracks the home base instead of a fixed label.
   String switchLabel(String homeBaseTimezone) {
@@ -24,7 +20,10 @@ enum JetlagLifestyle {
     }
   }
 
-  String sleepDetailFor(String homeBaseTimezone) {
+  String sleepDetailFor(
+    String homeBaseTimezone, {
+    int hybridMaxShiftHours = 3,
+  }) {
     final home = homeBaseTimezone.trim().isEmpty
         ? '기준 시간대'
         : homeBaseTimezone.trim();
@@ -32,7 +31,7 @@ enum JetlagLifestyle {
       case JetlagLifestyle.kstAnchor:
         return '$home 취침·기상을 유지합니다.';
       case JetlagLifestyle.hybrid:
-        return '$home에서 현지 쪽으로 최대 2시간 옮깁니다.';
+        return '$home에서 현지 쪽으로 최대 $hybridMaxShiftHours시간 옮깁니다.';
       case JetlagLifestyle.localAdapt:
         return '현지 낮과 밤에 맞춥니다.';
     }

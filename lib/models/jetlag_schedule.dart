@@ -5,32 +5,42 @@ import '../logic/home_base_timezone.dart';
 /// STA, STD, station, and pickup never come from the roster database.
 /// A future standalone app can build the same snapshot on its own.
 class JetlagScheduleSnapshot {
-  const JetlagScheduleSnapshot({
+  JetlagScheduleSnapshot({
     required this.stationLabel,
+    this.originLabel = '',
     required this.localTimeZone,
-    required this.staUtc,
-    required this.stdUtc,
-    this.pickupUtc,
-    this.showupUtc,
+    required DateTime staUtc,
+    required DateTime stdUtc,
+    DateTime? pickupUtc,
+    DateTime? showupUtc,
     this.flightNumber = '',
     this.crewRole = JetlagCrewRole.flightOps,
     this.blockMinutes = 11 * 60,
     this.referenceTimeZone = kJetlagFallbackHomeBase,
-  });
+  }) : staUtc = staUtc.toUtc(),
+       stdUtc = stdUtc.toUtc(),
+       pickupUtc = pickupUtc?.toUtc(),
+       showupUtc = showupUtc?.toUtc();
 
   /// Arrival station, for example `LAX`. A label, not a database key.
   final String stationLabel;
 
+  /// Departure station, when the caller supplied one.
+  final String originLabel;
+
   /// IANA zone of [stationLabel].
   final String localTimeZone;
 
-  /// Inbound arrival (STA).
+  /// Inbound arrival (STA), stored as UTC.
   final DateTime staUtc;
 
-  /// Outbound departure (STD).
+  /// Outbound departure (STD), stored as UTC.
   final DateTime stdUtc;
 
+  /// Hotel pickup, stored as UTC.
   final DateTime? pickupUtc;
+
+  /// Report time, stored as UTC.
   final DateTime? showupUtc;
   final String flightNumber;
   final JetlagCrewRole crewRole;
@@ -47,6 +57,7 @@ class JetlagScheduleSnapshot {
 
   JetlagScheduleSnapshot copyWith({
     String? stationLabel,
+    String? originLabel,
     String? localTimeZone,
     DateTime? staUtc,
     DateTime? stdUtc,
@@ -60,6 +71,7 @@ class JetlagScheduleSnapshot {
   }) {
     return JetlagScheduleSnapshot(
       stationLabel: stationLabel ?? this.stationLabel,
+      originLabel: originLabel ?? this.originLabel,
       localTimeZone: localTimeZone ?? this.localTimeZone,
       staUtc: staUtc ?? this.staUtc,
       stdUtc: stdUtc ?? this.stdUtc,

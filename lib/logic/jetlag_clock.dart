@@ -26,6 +26,75 @@ String formatHm(DateTime utc, String iana) {
   return '$hour:$minute';
 }
 
+/// Hour and minute of an absolute instant on the UTC clock.
+String formatUtcHm(DateTime instant) {
+  final utc = instant.toUtc();
+  final hour = utc.hour.toString().padLeft(2, '0');
+  final minute = utc.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+String _span(
+  DateTime startUtc,
+  DateTime? endUtc,
+  String Function(DateTime) one,
+) {
+  final start = one(startUtc.toUtc());
+  if (endUtc == null) return start;
+  return '$start - ${one(endUtc.toUtc())}';
+}
+
+/// Local wall time as the primary line, with home base and UTC underneath.
+///
+/// Rendering is the only place a zone offset is applied. [startUtc] and
+/// [endUtc] are absolute instants and are converted with [toUtc] first.
+class TripleClockText {
+  const TripleClockText({required this.local, required this.supporting});
+
+  final String local;
+  final String supporting;
+}
+
+TripleClockText formatTripleClock({
+  required DateTime startUtc,
+  DateTime? endUtc,
+  required String localIana,
+  required String localTag,
+  required String homeIana,
+}) {
+  final localSpan = _span(startUtc, endUtc, (utc) => formatHm(utc, localIana));
+  final homeSpan = _span(startUtc, endUtc, (utc) => formatHm(utc, homeIana));
+  final utcSpan = _span(startUtc, endUtc, formatUtcHm);
+  final homeAbbr = zoneAbbreviation(startUtc.toUtc(), homeIana);
+  return TripleClockText(
+    local: '$localSpan ($localTag)',
+    supporting: '$homeSpan $homeAbbr · ${utcSpan}Z',
+  );
+}
+
+/// Cockpit strip: `07:51 LAX (Local)  |  00:51 KST (Home)  |  15:51Z (UTC)`.
+String formatCockpitLine({
+  required DateTime nowUtc,
+  required String localIana,
+  required String homeIana,
+  required String stationLabel,
+}) {
+  final utc = nowUtc.toUtc();
+  final local = '${formatHm(utc, localIana)} $stationLabel (Local)';
+  final home =
+      '${formatHm(utc, homeIana)} ${zoneAbbreviation(utc, homeIana)} (Home)';
+  final zulu = '${formatUtcHm(utc)}Z (UTC)';
+  return '$local  |  $home  |  $zulu';
+}
+
+/// Home-base wall time and the UTC clock for one instant.
+String formatHomeAndUtc(DateTime instant, String homeIana) {
+  final utc = instant.toUtc();
+  final home = formatHm(utc, homeIana);
+  final abbr = zoneAbbreviation(utc, homeIana);
+  return '$home $abbr · ${formatUtcHm(utc)}Z';
+}
+
 /// Abbreviation reported by the timezone database at [utc].
 /// Falls back to the city segment of [iana] when the lookup fails.
 String zoneAbbreviation(DateTime utc, String iana) {

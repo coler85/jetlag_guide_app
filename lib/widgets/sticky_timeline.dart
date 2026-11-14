@@ -13,7 +13,6 @@ import 'now_line.dart';
 class StickyTimeline extends StatelessWidget {
   const StickyTimeline({
     super.key,
-    required this.header,
     required this.sections,
     required this.schedule,
     required this.role,
@@ -22,7 +21,6 @@ class StickyTimeline extends StatelessWidget {
     required this.onDismissLog,
   });
 
-  final Widget header;
   final List<TimelineSection> sections;
   final JetlagScheduleSnapshot schedule;
   final JetlagCrewRole role;
@@ -36,24 +34,25 @@ class StickyTimeline extends StatelessWidget {
       key: const ValueKey('jetlag-timeline'),
       primary: false,
       slivers: [
-        SliverToBoxAdapter(child: header),
-        for (final section in sections) ...[
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _DateHeaderDelegate(section.heading),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _row(section.markers[index]),
-                );
-              }, childCount: section.markers.length),
+        for (final section in sections)
+          if (section.markers.isNotEmpty) ...[
+            if (section.hasDatedContent)
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _DateHeaderDelegate(section.heading),
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _row(section.markers[index]),
+                  );
+                }, childCount: section.markers.length),
+              ),
             ),
-          ),
-        ],
+          ],
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 28),
@@ -66,15 +65,7 @@ class StickyTimeline extends StatelessWidget {
 
   Widget _row(TimelineMarker marker) {
     final child = switch (marker) {
-      EventMarker event => GuideEventCard(
-        event: event.event,
-        primaryClock: formatRange(
-          event.event.startUtc,
-          event.event.endUtc,
-          schedule.localTimeZone,
-        ),
-        secondaryClock: _secondary(event),
-      ),
+      EventMarker event => _eventCard(event),
       LogMarker log => InlineLogChip(
         log: log.log,
         clock: formatHm(log.log.atUtc, schedule.localTimeZone),
@@ -97,18 +88,19 @@ class StickyTimeline extends StatelessWidget {
     return Opacity(opacity: JetlagTheme.pastOpacity, child: child);
   }
 
-  String _secondary(EventMarker marker) {
-    if (schedule.localTimeZone == schedule.referenceTimeZone) return '';
-    final clock = formatRange(
-      marker.event.startUtc,
-      marker.event.endUtc,
-      schedule.referenceTimeZone,
+  Widget _eventCard(EventMarker marker) {
+    final clocks = formatTripleClock(
+      startUtc: marker.event.startUtc,
+      endUtc: marker.event.endUtc,
+      localIana: schedule.localTimeZone,
+      localTag: schedule.stationLabel,
+      homeIana: schedule.referenceTimeZone,
     );
-    final zone = zoneAbbreviation(
-      marker.event.startUtc,
-      schedule.referenceTimeZone,
+    return GuideEventCard(
+      event: marker.event,
+      localClock: clocks.local,
+      supportingClock: clocks.supporting,
     );
-    return '$clock $zone';
   }
 }
 

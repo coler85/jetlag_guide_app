@@ -7,13 +7,13 @@ class GuideEventCard extends StatelessWidget {
   const GuideEventCard({
     super.key,
     required this.event,
-    required this.primaryClock,
-    required this.secondaryClock,
+    required this.localClock,
+    required this.supportingClock,
   });
 
   final GuideEvent event;
-  final String primaryClock;
-  final String secondaryClock;
+  final String localClock;
+  final String supportingClock;
 
   @override
   Widget build(BuildContext context) {
@@ -45,15 +45,18 @@ class GuideEventCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(primaryClock, style: JetlagTheme.body),
+                  Text(localClock, style: JetlagTheme.localClock),
                   const SizedBox(height: 2),
+                  Text(
+                    supportingClock,
+                    style: JetlagTheme.micro.copyWith(
+                      fontFeatures: JetlagTheme.tabular,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(event.title, style: JetlagTheme.title),
                   const SizedBox(height: 2),
                   Text(event.detail, style: JetlagTheme.caption),
-                  if (secondaryClock.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(secondaryClock, style: JetlagTheme.micro),
-                  ],
                 ],
               ),
             ),

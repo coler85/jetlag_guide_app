@@ -2,6 +2,8 @@ import '../models/crew_log.dart';
 import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
+import '../models/sleep_log.dart';
+import '../models/user_settings.dart';
 import 'jetlag_clock.dart';
 import 'lifestyle_plan.dart';
 
@@ -9,24 +11,35 @@ class JetlagDashboard {
   const JetlagDashboard({
     required this.sleeping,
     required this.stateLabel,
-    required this.wakeClock,
-    required this.wakeZone,
+    required this.cueLabel,
+    required this.cueClock,
+    required this.cueZone,
     required this.pickupMissing,
     required this.pickupClock,
     required this.pickupZone,
     required this.dday,
     required this.remaining,
+    this.sleepDebtLabel = '0분',
+    this.sleepDebtInDebt = false,
   });
 
   final bool sleeping;
   final String stateLabel;
-  final String wakeClock;
-  final String wakeZone;
+
+  /// Subtitle under the current state. Awake shows the next sleep or the
+  /// caffeine cutoff. A recommended sleep shows the suggested wake time.
+  final String cueLabel;
+  final String cueClock;
+  final String cueZone;
   final bool pickupMissing;
   final String pickupClock;
   final String pickupZone;
   final String dday;
   final String remaining;
+
+  /// Signed balance against the usual night. Negative is a debt.
+  final String sleepDebtLabel;
+  final bool sleepDebtInDebt;
 }
 
 sealed class TimelineMarker {
@@ -94,11 +107,18 @@ class TimelineSection {
   final String dayKey;
   final String heading;
   final List<TimelineMarker> markers;
+
+  /// True when this date owns a guide event or a crew log.
+  /// A now-line by itself is not a date group.
+  bool get hasDatedContent =>
+      markers.any((marker) => marker is EventMarker || marker is LogMarker);
 }
 
 List<GuideEvent> buildGuideEvents(
   JetlagScheduleSnapshot schedule, {
   JetlagLifestyle lifestyle = JetlagLifestyle.kstAnchor,
+  UserSettings settings = UserSettings.defaults,
+  List<SleepLog> sleepLogs = const [],
 }) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
@@ -136,7 +156,11 @@ List<GuideEvent> buildGuideEvents(
       title: '도착',
       detail: arrivalDetail,
     ),
-    ...lifestyleBlocks(schedule: schedule, lifestyle: lifestyle),
+    ...lifestyleBlocks(
+      schedule: schedule,
+      lifestyle: lifestyle,
+      settings: settings,
+    ),
     if (pickup != null)
       GuideEvent(
         id: 'pickup',
@@ -181,6 +205,19 @@ List<GuideEvent> buildGuideEvents(
     if (!event.startUtc.isBefore(std)) return true;
     return false;
   });
+  for (final log in sleepLogs) {
+    if (!log.isValid) continue;
+    events.add(
+      GuideEvent(
+        id: 'logged-sleep-${log.id}',
+        kind: GuideEventKind.sleep,
+        startUtc: log.startUtc,
+        endUtc: log.endUtc,
+        title: '기록한 수면',
+        detail: '입력한 수면 시간입니다.',
+      ),
+    );
+  }
   events.sort((a, b) => a.startUtc.compareTo(b.startUtc));
   return events;
 }
@@ -196,10 +233,13 @@ CrewLog? openSleepLog(List<CrewLog> logs) {
 }
 
 GuideEvent? _coveringSleep(List<GuideEvent> events, DateTime instant) {
+  final nowUtc = instant.toUtc();
   for (final event in events) {
-    final end = event.endUtc;
+    final end = event.endUtc?.toUtc();
     if (event.kind != GuideEventKind.sleep || end == null) continue;
-    if (!event.startUtc.isAfter(instant) && end.isAfter(instant)) return event;
+    if (!event.startUtc.toUtc().isAfter(nowUtc) && end.isAfter(nowUtc)) {
+      return event;
+    }
   }
   return null;
 }
@@ -208,13 +248,17 @@ bool isSleeping({
   required List<GuideEvent> events,
   required List<CrewLog> logs,
   required DateTime now,
+  List<SleepLog> sleepLogs = const [],
 }) {
+  final nowUtc = now.toUtc();
+  if (sleepLogs.any((log) => log.covers(nowUtc))) return true;
   if (openSleepLog(logs) != null) return true;
-  final planned = _coveringSleep(events, now);
+  final planned = _coveringSleep(events, nowUtc);
   if (planned == null) return false;
   final woke = logs.any(
     (log) =>
-        log.kind == CrewLogKind.wake && !log.atUtc.isBefore(planned.startUtc),
+        log.kind == CrewLogKind.wake &&
+        !log.atUtc.toUtc().isBefore(planned.startUtc.toUtc()),
   );
   return !woke;
 }
@@ -224,21 +268,53 @@ DateTime? recommendedWake({
   required List<CrewLog> logs,
   required DateTime now,
 }) {
+  final nowUtc = now.toUtc();
   final open = openSleepLog(logs);
   if (open != null) {
-    final covering = _coveringSleep(events, open.atUtc);
-    if (covering?.endUtc != null) return covering!.endUtc;
-    return open.atUtc.add(const Duration(hours: 8));
+    final covering = _coveringSleep(events, open.atUtc.toUtc());
+    if (covering?.endUtc != null) return covering!.endUtc!.toUtc();
+    return open.atUtc.toUtc().add(const Duration(hours: 8));
   }
-  final current = _coveringSleep(events, now);
-  if (current?.endUtc != null) return current!.endUtc;
+  final current = _coveringSleep(events, nowUtc);
+  if (current?.endUtc != null) return current!.endUtc!.toUtc();
   for (final event in events) {
-    final end = event.endUtc;
-    if (event.kind == GuideEventKind.sleep && end != null && end.isAfter(now)) {
+    final end = event.endUtc?.toUtc();
+    if (event.kind == GuideEventKind.sleep &&
+        end != null &&
+        end.isAfter(nowUtc)) {
       return end;
     }
   }
   return null;
+}
+
+DateTime? _nextKind(
+  List<GuideEvent> events,
+  DateTime nowUtc,
+  GuideEventKind kind,
+) {
+  DateTime? best;
+  for (final event in events) {
+    if (event.kind != kind || event.missing) continue;
+    final start = event.startUtc.toUtc();
+    if (!start.isAfter(nowUtc)) continue;
+    if (best == null || start.isBefore(best)) best = start;
+  }
+  return best;
+}
+
+/// While awake, the nearer of the next caffeine cutoff and the next bedtime.
+({String label, DateTime? instant}) awakeCue(
+  List<GuideEvent> events,
+  DateTime now,
+) {
+  final nowUtc = now.toUtc();
+  final sleep = _nextKind(events, nowUtc, GuideEventKind.sleep);
+  final caffeine = _nextKind(events, nowUtc, GuideEventKind.caffeine);
+  if (caffeine != null && (sleep == null || !caffeine.isAfter(sleep))) {
+    return (label: '카페인 컷오프', instant: caffeine);
+  }
+  return (label: '다음 권장 취침', instant: sleep);
 }
 
 JetlagDashboard buildDashboard({
@@ -246,33 +322,55 @@ JetlagDashboard buildDashboard({
   required List<GuideEvent> events,
   required List<CrewLog> logs,
   required DateTime now,
+  List<SleepLog> sleepLogs = const [],
+  String sleepDebtLabel = '0분',
+  bool sleepDebtInDebt = false,
 }) {
-  final sleeping = isSleeping(events: events, logs: logs, now: now);
-  final wake = recommendedWake(events: events, logs: logs, now: now);
+  final nowUtc = now.toUtc();
+  final sleeping = isSleeping(
+    events: events,
+    logs: logs,
+    now: nowUtc,
+    sleepLogs: sleepLogs,
+  );
   final local = schedule.localTimeZone;
   final home = schedule.referenceTimeZone;
   final pickup = schedule.pickupUtc?.toUtc();
   String state = '활동 중';
+  late final String cueLabel;
+  late final DateTime? cueInstant;
+  final coveringLog = _coveringSleepLog(sleepLogs, nowUtc);
   if (sleeping) {
-    state = '수면 중';
+    state = openSleepLog(logs) != null || coveringLog != null
+        ? '수면 중'
+        : '수면 권장';
+    cueLabel = '권장 기상';
+    cueInstant =
+        coveringLog?.endUtc ??
+        recommendedWake(events: events, logs: logs, now: nowUtc);
   } else {
     for (final event in events) {
       final end = event.endUtc;
       if (end == null || event.missing) continue;
-      if (!event.startUtc.isAfter(now) && end.isAfter(now)) {
+      if (!event.startUtc.toUtc().isAfter(nowUtc) &&
+          end.toUtc().isAfter(nowUtc)) {
         state = event.title;
         break;
       }
     }
+    final cue = awakeCue(events, nowUtc);
+    cueLabel = cue.label;
+    cueInstant = cue.instant;
   }
 
   return JetlagDashboard(
     sleeping: sleeping,
     stateLabel: state,
-    wakeClock: wake == null ? '—' : formatHm(wake, home),
-    wakeZone: wake == null
-        ? '권장 시각 없음'
-        : _dualZone(wake, schedule, primaryHome: true),
+    cueLabel: cueLabel,
+    cueClock: cueInstant == null ? '—' : formatHm(cueInstant, local),
+    cueZone: cueInstant == null
+        ? (sleeping ? '권장 시각 없음' : '예정 없음')
+        : formatHomeAndUtc(cueInstant, home),
     pickupMissing: pickup == null,
     pickupClock: pickup == null ? '미입력' : formatHm(pickup, local),
     pickupZone: pickup == null
@@ -280,9 +378,18 @@ JetlagDashboard buildDashboard({
         : _dualZone(pickup, schedule),
     dday: pickup == null
         ? 'D—'
-        : ddayLabel(calendarDelta(fromUtc: now, toUtc: pickup, iana: local)),
-    remaining: pickup == null ? '시간 미정' : formatLead(pickup.difference(now)),
+        : ddayLabel(calendarDelta(fromUtc: nowUtc, toUtc: pickup, iana: local)),
+    remaining: pickup == null ? '시간 미정' : formatLead(pickup.difference(nowUtc)),
+    sleepDebtLabel: sleepDebtLabel,
+    sleepDebtInDebt: sleepDebtInDebt,
   );
+}
+
+SleepLog? _coveringSleepLog(List<SleepLog> logs, DateTime nowUtc) {
+  for (final log in logs) {
+    if (log.covers(nowUtc)) return log;
+  }
+  return null;
 }
 
 String _dualZone(
@@ -298,18 +405,19 @@ String _dualZone(
   return primaryHome ? '$home · $local' : '$local · $home';
 }
 
-int _group(GuideEvent event, DateTime now) {
-  if (event.missing) return 2;
-  final end = event.endUtc ?? event.startUtc;
-  if (!end.isAfter(now)) return 0;
-  if (event.startUtc.isAfter(now)) return 2;
-  return 1;
+int _markerRank(TimelineMarker marker) {
+  return switch (marker) {
+    EventMarker() => 0,
+    LogMarker() => 1,
+    BunkMarker() => 2,
+    NowMarker() => 3,
+  };
 }
 
-int _logGroup(CrewLog log, DateTime now) {
-  if (log.atUtc.isBefore(now)) return 0;
-  if (log.atUtc.isAfter(now)) return 2;
-  return 1;
+bool _eventDimmed(GuideEvent event, DateTime nowUtc) {
+  if (event.missing) return false;
+  final end = (event.endUtc ?? event.startUtc).toUtc();
+  return !end.isAfter(nowUtc);
 }
 
 List<TimelineSection> buildTimelineSections({
@@ -317,60 +425,65 @@ List<TimelineSection> buildTimelineSections({
   required List<CrewLog> logs,
   required DateTime now,
   JetlagLifestyle lifestyle = JetlagLifestyle.kstAnchor,
+  UserSettings settings = UserSettings.defaults,
+  List<SleepLog> sleepLogs = const [],
 }) {
-  final events = buildGuideEvents(schedule, lifestyle: lifestyle);
+  final nowUtc = now.toUtc();
+  final events = buildGuideEvents(
+    schedule,
+    lifestyle: lifestyle,
+    settings: settings,
+    sleepLogs: sleepLogs,
+  );
   final zone = schedule.localTimeZone;
-  final timed = <({DateTime time, int group, TimelineMarker marker})>[];
+  final markers = <TimelineMarker>[];
 
   for (final event in events) {
-    final group = _group(event, now);
-    timed.add((
-      time: event.startUtc,
-      group: group,
-      marker: EventMarker(
+    final start = event.startUtc.toUtc();
+    markers.add(
+      EventMarker(
         event: event,
-        dimmed: group == 0,
-        dayKey: dayKey(event.startUtc, zone),
+        dimmed: _eventDimmed(event, nowUtc),
+        dayKey: dayKey(start, zone),
       ),
-    ));
+    );
   }
   for (final log in logs) {
-    final group = _logGroup(log, now);
-    timed.add((
-      time: log.atUtc,
-      group: group,
-      marker: LogMarker(
+    final at = log.atUtc.toUtc();
+    markers.add(
+      LogMarker(
         log: log,
-        dimmed: group == 0,
-        dayKey: dayKey(log.atUtc, zone),
+        dimmed: at.isBefore(nowUtc),
+        dayKey: dayKey(at, zone),
       ),
-    ));
+    );
   }
-  timed.sort((a, b) {
-    final byGroup = a.group.compareTo(b.group);
-    if (byGroup != 0) return byGroup;
-    return a.time.compareTo(b.time);
+  markers.sort((a, b) {
+    final byTime = a.stamp.toUtc().compareTo(b.stamp.toUtc());
+    if (byTime != 0) return byTime;
+    return _markerRank(a).compareTo(_markerRank(b));
   });
 
-  final markers = <TimelineMarker>[];
-  var placedNow = false;
-  for (final item in timed) {
-    if (!placedNow && item.group > 0) {
-      markers.add(NowMarker(stamp: now, dayKey: dayKey(now, zone)));
-      placedNow = true;
-    }
-    markers.add(item.marker);
-    final marker = item.marker;
+  final laid = <TimelineMarker>[];
+  for (final marker in markers) {
+    laid.add(marker);
     if (marker is EventMarker && marker.event.kind == GuideEventKind.pickup) {
-      markers.add(BunkMarker(stamp: marker.stamp, dayKey: marker.dayKey));
+      laid.add(BunkMarker(stamp: marker.stamp.toUtc(), dayKey: marker.dayKey));
     }
   }
-  if (!placedNow) {
-    markers.add(NowMarker(stamp: now, dayKey: dayKey(now, zone)));
+
+  final nowMarker = NowMarker(stamp: nowUtc, dayKey: dayKey(nowUtc, zone));
+  final insertAt = laid.indexWhere(
+    (marker) => marker.stamp.toUtc().isAfter(nowUtc),
+  );
+  if (insertAt < 0) {
+    laid.add(nowMarker);
+  } else {
+    laid.insert(insertAt, nowMarker);
   }
 
   final sections = <TimelineSection>[];
-  for (final marker in markers) {
+  for (final marker in laid) {
     if (sections.isEmpty || sections.last.dayKey != marker.dayKey) {
       sections.add(
         TimelineSection(
@@ -383,5 +496,35 @@ List<TimelineSection> buildTimelineSections({
       sections.last.markers.add(marker);
     }
   }
-  return sections;
+  return _withoutEmptyDateGroups(sections);
+}
+
+/// Drops a date whose markers contain no event and no log.
+/// A now-line from that date is kept on the neighboring group that has content.
+List<TimelineSection> _withoutEmptyDateGroups(List<TimelineSection> sections) {
+  final kept = <TimelineSection>[];
+  final displaced = <NowMarker>[];
+  for (final section in sections) {
+    if (!section.hasDatedContent) {
+      displaced.addAll(section.markers.whereType<NowMarker>());
+      continue;
+    }
+    if (displaced.isNotEmpty) {
+      section.markers.insertAll(0, displaced);
+      displaced.clear();
+    }
+    kept.add(section);
+  }
+  if (displaced.isEmpty) return kept;
+  if (kept.isEmpty) {
+    return [
+      TimelineSection(
+        dayKey: displaced.first.dayKey,
+        heading: '',
+        markers: displaced,
+      ),
+    ];
+  }
+  kept.last.markers.addAll(displaced);
+  return kept;
 }

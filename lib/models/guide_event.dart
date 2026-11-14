@@ -10,15 +10,16 @@ enum GuideEventKind {
 }
 
 class GuideEvent {
-  const GuideEvent({
+  GuideEvent({
     required this.id,
     required this.kind,
-    required this.startUtc,
-    this.endUtc,
+    required DateTime startUtc,
+    DateTime? endUtc,
     required this.title,
     required this.detail,
     this.missing = false,
-  });
+  }) : startUtc = startUtc.toUtc(),
+       endUtc = endUtc?.toUtc();
 
   final String id;
   final GuideEventKind kind;

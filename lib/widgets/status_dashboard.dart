@@ -11,15 +11,56 @@ class StatusDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: _stateCard(data)),
-          const SizedBox(width: 10),
-          Expanded(child: _pickupCard(data)),
-        ],
-      ),
+    final debtColor = data.sleepDebtInDebt
+        ? JetlagTheme.debt
+        : JetlagTheme.surplus;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
+          key: const ValueKey('jetlag-sleep-debt'),
+          decoration: BoxDecoration(
+            color: debtColor.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: debtColor.withValues(alpha: 0.7)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  data.sleepDebtInDebt
+                      ? Icons.nightlight_round
+                      : Icons.bedtime_outlined,
+                  size: 16,
+                  color: debtColor,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('수면 부채', style: JetlagTheme.body)),
+                Text(
+                  data.sleepDebtLabel,
+                  key: const ValueKey('jetlag-sleep-debt-value'),
+                  style: JetlagTheme.clock.copyWith(
+                    color: debtColor,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _stateCard(data)),
+              const SizedBox(width: 10),
+              Expanded(child: _pickupCard(data)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -30,10 +71,10 @@ class StatusDashboard extends StatelessWidget {
       accent: accent,
       label: '현재',
       value: data.stateLabel,
-      footnote: '권장 기상',
-      detail: data.wakeClock,
+      footnote: data.cueLabel,
+      detail: data.cueClock,
       detailKey: const ValueKey('jetlag-wake-clock'),
-      extra: data.wakeZone,
+      extra: data.cueZone,
     );
   }
 

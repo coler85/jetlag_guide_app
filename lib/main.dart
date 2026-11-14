@@ -7,9 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 
 import 'logic/jetlag_clock.dart';
+import 'models/flight_schedule_input.dart';
 import 'notifications/jetlag_alert_channel.dart';
 import 'notifications/jetlag_alert_scheduler.dart';
-import 'sample_schedule.dart';
 import 'screens/root_screen.dart';
 import 'state/jetlag_guide_controller.dart';
 import 'state/jetlag_log_store.dart';
@@ -82,26 +82,32 @@ Future<void> main() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, this.bootstrap});
+  const MyApp({super.key, this.bootstrap, this.schedule});
 
   final JetlagAppBootstrap? bootstrap;
+
+  /// Layover injected by a roster app or a deep link. Null shows guidance.
+  final FlightScheduleInput? schedule;
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => _openGuide(bootstrap),
+      create: (_) => _openGuide(bootstrap, schedule),
       child: MaterialApp(
         title: 'Jet Lag Guide',
         theme: JetlagTheme.material,
         darkTheme: JetlagTheme.material,
         themeMode: ThemeMode.dark,
-        home: const RootScreen(),
+        home: RootScreen(schedule: schedule),
       ),
     );
   }
 }
 
-JetlagGuideController _openGuide(JetlagAppBootstrap? bootstrap) {
+JetlagGuideController _openGuide(
+  JetlagAppBootstrap? bootstrap,
+  FlightScheduleInput? schedule,
+) {
   try {
     ensureJetlagTimeZones();
   } catch (error, stackTrace) {
@@ -110,7 +116,7 @@ JetlagGuideController _openGuide(JetlagAppBootstrap? bootstrap) {
 
   final preferences = bootstrap?.preferences;
   final controller = JetlagGuideController(
-    schedule: sampleJetlagSchedule(),
+    schedule: schedule?.toSnapshot(),
     logStore: const JetlagLogStore(),
     alerts: JetlagLocalAlertScheduler(plugin: bootstrap?.notifications),
     homeBase: preferences == null

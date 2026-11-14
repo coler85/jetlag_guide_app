@@ -18,9 +18,11 @@ class SchedulePage extends StatelessWidget {
       primary: false,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
-        const Text('STA·STD·스테이션은 이 화면 밖에서 주입됩니다.', style: JetlagTheme.caption),
+        const Text('STA·STD·출도착지는 이 화면 밖에서 주입됩니다.', style: JetlagTheme.caption),
         const SizedBox(height: 12),
-        _Fact(label: '스테이션', value: schedule.stationLabel),
+        if (schedule.originLabel.isNotEmpty)
+          _Fact(label: '출발', value: schedule.originLabel),
+        _Fact(label: '도착', value: schedule.stationLabel),
         _Fact(label: '시간대', value: schedule.localTimeZone),
         _Fact(label: '도착 STA', value: _clocks(schedule.staUtc)),
         _Fact(label: '출발 STD', value: _clocks(schedule.stdUtc)),

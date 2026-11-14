@@ -1,13 +1,21 @@
 import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
+import '../models/user_settings.dart';
+import 'home_departure.dart';
+import 'hybrid_strategy.dart';
 import 'jetlag_clock.dart';
 
 class _SleepWindow {
-  const _SleepWindow({required this.startUtc, required this.endUtc});
+  const _SleepWindow({
+    required this.startUtc,
+    required this.endUtc,
+    this.earlyShowUp = false,
+  });
 
   final DateTime startUtc;
   final DateTime endUtc;
+  final bool earlyShowUp;
 }
 
 /// Sleep, caffeine, meal, and light blocks for the selected lifestyle.
@@ -15,12 +23,13 @@ class _SleepWindow {
 List<GuideEvent> lifestyleBlocks({
   required JetlagScheduleSnapshot schedule,
   required JetlagLifestyle lifestyle,
+  UserSettings settings = UserSettings.defaults,
 }) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
   if (!std.isAfter(sta)) return const [];
 
-  final windows = _sleepWindows(schedule, lifestyle);
+  final windows = _sleepWindows(schedule, lifestyle, settings);
   final sleeps = windows.isEmpty ? [_fallbackSleep(schedule)] : windows;
   final blocks = <GuideEvent>[];
   for (final sleep in sleeps) {
@@ -55,7 +64,12 @@ List<GuideEvent> lifestyleBlocks({
         startUtc: sleep.startUtc,
         endUtc: sleep.endUtc,
         title: '수면',
-        detail: lifestyle.sleepDetailFor(schedule.referenceTimeZone),
+        detail: sleep.earlyShowUp
+            ? '새벽 쇼업에 맞춰 미리 잡니다. 강제 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
+            : lifestyle.sleepDetailFor(
+                schedule.referenceTimeZone,
+                hybridMaxShiftHours: settings.hybridMaxShiftHours,
+              ),
       ),
     );
     final lightEnd = sleep.endUtc.add(const Duration(minutes: 30));
@@ -78,6 +92,7 @@ List<GuideEvent> lifestyleBlocks({
 List<_SleepWindow> _sleepWindows(
   JetlagScheduleSnapshot schedule,
   JetlagLifestyle lifestyle,
+  UserSettings settings,
 ) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
@@ -85,10 +100,17 @@ List<_SleepWindow> _sleepWindows(
       ? schedule.localTimeZone
       : schedule.referenceTimeZone;
   final shift = lifestyle == JetlagLifestyle.hybrid
-      ? _hybridShift(
-          zoneOffset(sta, schedule.localTimeZone, schedule.referenceTimeZone),
+      ? const HybridStrategy().shift(
+          zoneOffset: zoneOffset(
+            sta,
+            schedule.localTimeZone,
+            schedule.referenceTimeZone,
+          ),
+          maxShift: Duration(hours: settings.hybridMaxShiftHours),
         )
       : Duration.zero;
+  final bedMinute = settings.defaultBedTime.minuteOfDay;
+  final wakeMinute = settings.defaultWakeTime.minuteOfDay;
   final pickup = schedule.pickupUtc?.toUtc();
   final windows = <_SleepWindow>[];
   for (final day in calendarDays(zone, sta, std)) {
@@ -97,8 +119,8 @@ List<_SleepWindow> _sleepWindows(
       year: day.year,
       month: day.month,
       day: day.day,
-      hour: JetlagLifestyle.bedMinute ~/ 60,
-      minute: JetlagLifestyle.bedMinute % 60,
+      hour: bedMinute ~/ 60,
+      minute: bedMinute % 60,
       shift: shift,
     );
     var wake = zonedUtc(
@@ -106,8 +128,8 @@ List<_SleepWindow> _sleepWindows(
       year: day.year,
       month: day.month,
       day: day.day,
-      hour: JetlagLifestyle.wakeMinute ~/ 60,
-      minute: JetlagLifestyle.wakeMinute % 60,
+      hour: wakeMinute ~/ 60,
+      minute: wakeMinute % 60,
       shift: shift,
     );
     if (!wake.isAfter(bed)) {
@@ -117,8 +139,8 @@ List<_SleepWindow> _sleepWindows(
         year: next.year,
         month: next.month,
         day: next.day,
-        hour: JetlagLifestyle.wakeMinute ~/ 60,
-        minute: JetlagLifestyle.wakeMinute % 60,
+        hour: wakeMinute ~/ 60,
+        minute: wakeMinute % 60,
         shift: shift,
       );
     }
@@ -127,30 +149,58 @@ List<_SleepWindow> _sleepWindows(
     if (!bed.isBefore(std) || !end.isAfter(sta)) continue;
     windows.add(_SleepWindow(startUtc: bed, endUtc: end));
   }
-  return windows;
+  return _withHomeDeparture(schedule, settings, windows);
+}
+
+/// Replaces the usual night that a dawn report cuts, with the earlier window.
+List<_SleepWindow> _withHomeDeparture(
+  JetlagScheduleSnapshot schedule,
+  UserSettings settings,
+  List<_SleepWindow> windows,
+) {
+  final plan = const HomeDepartureAdvisor().evaluate(
+    schedule: schedule,
+    settings: settings,
+  );
+  final start = plan.recommendedStartUtc;
+  final end = plan.recommendedEndUtc;
+  final naturalBed = plan.naturalBedUtc;
+  final naturalWake = plan.naturalWakeUtc;
+  if (!plan.applies ||
+      start == null ||
+      end == null ||
+      naturalBed == null ||
+      naturalWake == null ||
+      !end.isAfter(start)) {
+    return windows;
+  }
+  final sta = schedule.staUtc.toUtc();
+  final std = schedule.stdUtc.toUtc();
+  if (!start.isBefore(std) || !end.isAfter(sta)) return windows;
+
+  final kept = windows.where((window) {
+    final hitsNight = _rangesOverlap(
+      window.startUtc,
+      window.endUtc,
+      naturalBed,
+      naturalWake,
+    );
+    final hitsPlan = _rangesOverlap(window.startUtc, window.endUtc, start, end);
+    return !hitsNight && !hitsPlan;
+  }).toList();
+  kept.add(_SleepWindow(startUtc: start, endUtc: end, earlyShowUp: true));
+  kept.sort((a, b) => a.startUtc.compareTo(b.startUtc));
+  return kept;
+}
+
+bool _rangesOverlap(DateTime a0, DateTime a1, DateTime b0, DateTime b1) {
+  return a0.isBefore(b1) && b0.isBefore(a1);
 }
 
 DateTime _pulledWake(DateTime wakeUtc, DateTime? pickupUtc) {
   if (pickupUtc == null) return wakeUtc;
   final ready = pickupUtc.subtract(const Duration(minutes: 90));
   return ready.isBefore(wakeUtc) ? ready : wakeUtc;
-}
-
-/// Shorter way around the clock, then capped at ±2 hours.
-Duration _hybridShift(Duration zoneOffset) {
-  var minutes = -zoneOffset.inMinutes;
-  const day = 24 * 60;
-  const half = 12 * 60;
-  while (minutes > half) {
-    minutes -= day;
-  }
-  while (minutes <= -half) {
-    minutes += day;
-  }
-  final cap = JetlagLifestyle.hybridCap.inMinutes;
-  if (minutes > cap) minutes = cap;
-  if (minutes < -cap) minutes = -cap;
-  return Duration(minutes: minutes);
 }
 
 _SleepWindow _fallbackSleep(JetlagScheduleSnapshot schedule) {

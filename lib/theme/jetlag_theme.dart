@@ -20,6 +20,8 @@ class JetlagTheme {
   static const meal = Color(0xFF50E3C2);
   static const light = Color(0xFFFFD043);
   static const now = Color(0xFFFF5A7A);
+  static const debt = Color(0xFFFF5C5C);
+  static const surplus = Color(0xFF3DDC97);
 
   static const pastOpacity = 0.4;
   static const pagePadding = 16.0;
@@ -35,6 +37,13 @@ class JetlagTheme {
   static const clock = TextStyle(
     fontSize: 22,
     fontWeight: FontWeight.w700,
+    color: textPrimary,
+    fontFeatures: tabular,
+    height: 1.15,
+  );
+  static const localClock = TextStyle(
+    fontSize: 17,
+    fontWeight: FontWeight.w800,
     color: textPrimary,
     fontFeatures: tabular,
     height: 1.15,

@@ -6,55 +6,102 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../logic/jetlag_calculator.dart';
 import '../models/bunk_shift.dart';
 import '../models/crew_log.dart';
+import '../models/flight_schedule_input.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
+import '../models/sleep_log.dart';
+import '../models/user_settings.dart';
 import '../notifications/jetlag_alert_channel.dart';
 import '../notifications/jetlag_alert_scheduler.dart';
 import 'jetlag_log_store.dart';
 import 'jetlag_state.dart';
+import 'sleep_log_store.dart';
+import 'user_settings_store.dart';
 
 class JetlagGuideController extends ChangeNotifier {
   JetlagGuideController({
-    required JetlagScheduleSnapshot schedule,
+    JetlagScheduleSnapshot? schedule,
     required this.logStore,
     required this.alerts,
     DateTime Function()? now,
     JetLagState? homeBase,
     JetLagCalculator? calculator,
+    UserSettingsStore? settingsStore,
+    SleepLogStore? sleepLogStore,
   }) : _schedule = schedule,
-       _now = now ?? DateTime.now,
-       role = schedule.crewRole,
+       _now = now ?? _readUtcNow,
+       role = schedule?.crewRole ?? JetlagCrewRole.flightOps,
        _home = homeBase ?? JetLagState(),
-       _calculator = calculator ?? const JetLagCalculator() {
-    _timeline = _safeTimeline();
+       _calculator = calculator ?? const JetLagCalculator(),
+       _settingsStore = settingsStore ?? const UserSettingsStore(),
+       _sleepLogStore = sleepLogStore ?? const SleepLogStore() {
+    if (_schedule != null) _timeline = _safeTimeline();
     _home.addListener(_onHomeBaseChanged);
   }
 
   final JetlagLogStore logStore;
   final JetlagAlertScheduler alerts;
   final DateTime Function() _now;
+
+  /// Device clock as an absolute UTC instant. Wall-clock fields are display-only.
+  static DateTime _readUtcNow() => DateTime.now().toUtc();
   final JetLagState _home;
   final JetLagCalculator _calculator;
+  final UserSettingsStore _settingsStore;
+  final SleepLogStore _sleepLogStore;
 
-  JetlagScheduleSnapshot _schedule;
+  JetlagScheduleSnapshot? _schedule;
   JetlagCrewRole role;
   JetlagLifestyle lifestyle = JetlagLifestyle.kstAnchor;
+  UserSettings settings = UserSettings.defaults;
   BunkShift? bunkShift;
   List<CrewLog> logs = const [];
+  List<SleepLog> sleepLogs = const [];
   bool alertsEnabled = false;
   int _lifestyleEpoch = 0;
+  int _settingsEpoch = 0;
   bool _ready = false;
   bool _disposed = false;
 
-  late JetLagTimeline _timeline;
+  JetLagTimeline? _timeline;
+
+  bool get hasSchedule => _schedule != null;
 
   Future<void> _tail = Future<void>.value();
   int _serial = 0;
 
   /// Layover facts with the saved home base applied.
-  JetlagScheduleSnapshot get schedule => _timeline.schedule;
+  JetlagScheduleSnapshot get schedule => timeline.schedule;
 
-  JetLagTimeline get timeline => _timeline;
+  JetLagTimeline get timeline {
+    final built = _timeline;
+    if (built == null) {
+      throw StateError('Jet Lag Guide has no flight schedule');
+    }
+    return built;
+  }
+
+  /// Replaces the injected layover and reloads logs for that key.
+  void adoptSchedule(FlightScheduleInput input) {
+    final snapshot = input.toSnapshot();
+    _schedule = snapshot;
+    role = snapshot.crewRole;
+    bunkShift = null;
+    logs = const [];
+    sleepLogs = const [];
+    _publish();
+    unawaited(
+      _lock(() async {
+        final current = _schedule;
+        if (current == null || current.key != snapshot.key) return;
+        logs = await logStore.load(snapshot.key);
+        sleepLogs = await _sleepLogStore.load(snapshot.key);
+        _publish();
+        if (_disposed || !alertsEnabled) return;
+        await _syncPickupAlert();
+      }),
+    );
+  }
 
   String get homeBaseTimezone => _home.homeBaseTimezone;
 
@@ -69,8 +116,15 @@ class JetlagGuideController extends ChangeNotifier {
     return _lock(() async {
       try {
         final epoch = _lifestyleEpoch;
+        final settingsEpoch = _settingsEpoch;
         await _home.load();
-        logs = await logStore.load(_schedule.key);
+        final loadedSettings = await _settingsStore.load();
+        if (settingsEpoch == _settingsEpoch) settings = loadedSettings;
+        final schedule = _schedule;
+        if (schedule != null) {
+          logs = await logStore.load(schedule.key);
+          sleepLogs = await _sleepLogStore.load(schedule.key);
+        }
         final prefs = await SharedPreferences.getInstance();
         alertsEnabled = prefs.getBool(JetlagAlertChannel.enabledKey) ?? false;
         if (epoch == _lifestyleEpoch) {
@@ -84,7 +138,7 @@ class JetlagGuideController extends ChangeNotifier {
         _ready = true;
         _publish();
       }
-      if (_disposed || !alertsEnabled) return;
+      if (_disposed || !alertsEnabled || _schedule == null) return;
       final ready = await alerts.ensureChannel();
       if (ready && !_disposed) await _syncPickupAlert();
     });
@@ -94,16 +148,68 @@ class JetlagGuideController extends ChangeNotifier {
     unawaited(_home.setHomeBaseTimezone(iana));
   }
 
+  void setUserSettings(UserSettings next) {
+    final normalized = next.normalized();
+    if (normalized == settings) return;
+    settings = normalized;
+    final epoch = ++_settingsEpoch;
+    _publish();
+    unawaited(
+      _lock(() async {
+        if (epoch != _settingsEpoch || _disposed) return;
+        await _settingsStore.save(settings);
+      }),
+    );
+  }
+
+  Future<void> addSleepLog({
+    required DateTime startUtc,
+    required DateTime endUtc,
+  }) {
+    return _lock(() async {
+      final schedule = _schedule;
+      if (_disposed || schedule == null) return;
+      final start = startUtc.toUtc();
+      final end = endUtc.toUtc();
+      if (!end.isAfter(start)) return;
+      final entry = SleepLog(
+        id: 'sleep-${now().microsecondsSinceEpoch}-${_serial++}',
+        startUtc: start,
+        endUtc: end,
+        scheduleKey: schedule.key,
+      );
+      final next = [...sleepLogs, entry];
+      await _sleepLogStore.save(schedule.key, next);
+      if (_disposed) return;
+      sleepLogs = next;
+      _publish();
+    });
+  }
+
+  Future<void> removeSleepLog(String id) {
+    return _lock(() async {
+      final schedule = _schedule;
+      if (_disposed || schedule == null) return;
+      final next = sleepLogs.where((log) => log.id != id).toList();
+      await _sleepLogStore.save(schedule.key, next);
+      if (_disposed) return;
+      sleepLogs = next;
+      _publish();
+    });
+  }
+
   Future<void> addLog(CrewLogKind kind) {
     return _lock(() async {
+      final schedule = _schedule;
+      if (schedule == null) return;
       final entry = CrewLog(
         id: '${now().microsecondsSinceEpoch}-${_serial++}',
         atUtc: now(),
         kind: kind,
-        scheduleKey: _schedule.key,
+        scheduleKey: schedule.key,
       );
       final next = [...logs, entry];
-      await logStore.save(_schedule.key, next);
+      await logStore.save(schedule.key, next);
       logs = next;
       _publish();
     });
@@ -111,8 +217,10 @@ class JetlagGuideController extends ChangeNotifier {
 
   Future<void> removeLog(String id) {
     return _lock(() async {
+      final schedule = _schedule;
+      if (schedule == null) return;
       final next = logs.where((log) => log.id != id).toList();
-      await logStore.save(_schedule.key, next);
+      await logStore.save(schedule.key, next);
       logs = next;
       _publish();
     });
@@ -146,7 +254,9 @@ class JetlagGuideController extends ChangeNotifier {
 
   Future<void> setPickup(DateTime pickupUtc) {
     return _lock(() async {
-      _schedule = _schedule.copyWith(pickupUtc: pickupUtc.toUtc());
+      final schedule = _schedule;
+      if (schedule == null) return;
+      _schedule = schedule.copyWith(pickupUtc: pickupUtc.toUtc());
       _publish();
       if (alertsEnabled) await _syncPickupAlert();
     });
@@ -179,7 +289,9 @@ class JetlagGuideController extends ChangeNotifier {
   }
 
   Future<void> _syncPickupAlert() async {
-    final pickup = _schedule.pickupUtc?.toUtc();
+    final schedule = _schedule;
+    if (schedule == null) return;
+    final pickup = schedule.pickupUtc?.toUtc();
     final id = JetlagAlertChannel.pickupNotificationId;
     if (pickup == null) {
       await alerts.cancel(id: id);
@@ -194,7 +306,7 @@ class JetlagGuideController extends ChangeNotifier {
       id: id,
       whenUtc: fireAt,
       title: '픽업 준비',
-      body: '${_schedule.stationLabel} 픽업 90분 전입니다.',
+      body: '${schedule.stationLabel} 픽업 90분 전입니다.',
     );
   }
 
@@ -208,23 +320,29 @@ class JetlagGuideController extends ChangeNotifier {
   }
 
   JetLagTimeline _safeTimeline() {
+    final schedule = _schedule;
+    if (schedule == null) {
+      throw StateError('Jet Lag Guide has no flight schedule');
+    }
     try {
       return _calculator.calculate(
-        schedule: _schedule,
+        schedule: schedule,
         lifestyle: lifestyle,
         logs: logs,
+        sleepLogs: sleepLogs,
+        settings: settings,
         now: now(),
         homeBaseTimezone: _home.homeBaseTimezone,
       );
     } catch (error, stack) {
       debugPrint('jetlag timeline fallback: $error\n$stack');
-      return JetLagTimeline.unavailable(_schedule);
+      return JetLagTimeline.unavailable(schedule);
     }
   }
 
   void _publish() {
     if (_disposed) return;
-    _timeline = _safeTimeline();
+    if (_schedule != null) _timeline = _safeTimeline();
     notifyListeners();
   }
 

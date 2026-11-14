@@ -68,7 +68,7 @@ class _BunkSelectionCardState extends State<BunkSelectionCard> {
             const SizedBox(height: 2),
             Text(
               widget.role == JetlagCrewRole.flightOps
-                  ? '운항 · P2 전반 / P1 후반'
+                  ? '운항 · P1 후반휴식 / P2 전반휴식'
                   : '객실 · 1교대 / 2교대',
               style: JetlagTheme.caption,
             ),
@@ -149,7 +149,13 @@ class _CueRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(cue.title, style: JetlagTheme.caption),
-                Text(cue.window, style: JetlagTheme.body),
+                Text(cue.window, style: JetlagTheme.localClock),
+                Text(
+                  cue.supporting,
+                  style: JetlagTheme.micro.copyWith(
+                    fontFeatures: JetlagTheme.tabular,
+                  ),
+                ),
                 Text(cue.detail, style: JetlagTheme.micro),
               ],
             ),
