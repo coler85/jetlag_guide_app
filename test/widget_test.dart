@@ -7,6 +7,7 @@ import 'package:jetlag_guide_app/logic/jetlag_clock.dart';
 import 'package:jetlag_guide_app/main.dart';
 import 'package:jetlag_guide_app/models/bunk_shift.dart';
 import 'package:jetlag_guide_app/models/crew_log.dart';
+import 'package:jetlag_guide_app/models/guide_event.dart';
 import 'package:jetlag_guide_app/models/jetlag_schedule.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
 import 'package:jetlag_guide_app/sample_schedule.dart';
@@ -52,19 +53,42 @@ void main() {
     expect(early == late, isFalse);
   });
 
-  testWidgets('home without a schedule shows guidance', (tester) async {
+  testWidgets('home without a schedule opens the intake screen', (
+    tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('jetlag-schedule-page')), findsOneWidget);
+    expect(find.byKey(const ValueKey('schedule-action-file')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('schedule-action-roster')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('schedule-action-manual')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('schedule-action-report')),
+      findsOneWidget,
+    );
+    expect(find.byType(TimelinePage), findsNothing);
+
+    await tester.tap(find.text('타임라인'));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('jetlag-empty-schedule')), findsOneWidget);
     expect(find.text('샘플 일정 보기'), findsOneWidget);
-    expect(find.byType(TimelinePage), findsNothing);
 
     await tester.tap(find.text('기록·설정'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('jetlag-records-page')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('jetlag-empty-schedule'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('jetlag-schedule-page'), skipOffstage: false),
       findsOneWidget,
     );
   });
@@ -98,10 +122,13 @@ void main() {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('타임라인'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('샘플 일정 보기'));
     await tester.pumpAndSettle();
 
     expect(find.byType(TimelinePage), findsOneWidget);
+    expect(find.text('샘플 일정'), findsOneWidget);
     expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
   });
 
@@ -169,6 +196,27 @@ void main() {
     expect(asleep.dashboard.cueLabel, '권장 기상');
   });
 
+  test('bunk card sits immediately after departure', () {
+    final markers = [
+      for (final section in _timeline(DateTime.utc(2026, 6, 4, 12)).sections)
+        ...section.markers,
+    ];
+    final departure = markers.indexWhere(
+      (marker) =>
+          marker is EventMarker &&
+          marker.event.kind == GuideEventKind.departure,
+    );
+    expect(departure, greaterThanOrEqualTo(0));
+    expect(markers[departure + 1], isA<BunkMarker>());
+    final pickup = markers.indexWhere(
+      (marker) =>
+          marker is EventMarker && marker.event.kind == GuideEventKind.pickup,
+    );
+    expect(pickup, greaterThanOrEqualTo(0));
+    expect(pickup, lessThan(departure));
+    expect(markers[departure + 1].stamp.toUtc(), _laxLayover().stdUtc.toUtc());
+  });
+
   test('a date with no events does not keep a header group', () {
     final sections = _timeline(DateTime.utc(2026, 6, 1, 19)).sections;
     expect(sections, isNotEmpty);
@@ -205,8 +253,17 @@ void main() {
     expect(find.text('카페인 컷오프'), findsOneWidget);
     expect(find.text('권장 기상'), findsNothing);
     expect(find.textContaining('6월 1일'), findsNothing);
-    expect(find.byKey(const ValueKey('jetlag-now-line')), findsOneWidget);
     expect(find.byType(CustomScrollView), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('jetlag-now-line')),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('jetlag-timeline')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.byKey(const ValueKey('jetlag-now-line')), findsOneWidget);
 
     final clock = tester.getRect(
       find.byKey(const ValueKey('jetlag-clock-bar')),
@@ -214,7 +271,30 @@ void main() {
     final scroll = tester.getRect(
       find.byKey(const ValueKey('jetlag-timeline')),
     );
-    expect(clock.bottom, lessThanOrEqualTo(scroll.top));
+    expect(clock.top, greaterThanOrEqualTo(scroll.top));
+    expect(find.byKey(const ValueKey('jetlag-sleep-debt')), findsOneWidget);
+    expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('jetlag-timeline')),
+      const Offset(0, -900),
+    );
+    await tester.pumpAndSettle();
+
+    final pinnedClock = tester.getRect(
+      find.byKey(const ValueKey('jetlag-clock-bar')),
+    );
+    final pinnedScroll = tester.getRect(
+      find.byKey(const ValueKey('jetlag-timeline')),
+    );
+    expect(pinnedClock.top, closeTo(pinnedScroll.top, 12));
+    expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('jetlag-collapsing-header')))
+          .height,
+      lessThan(140),
+    );
   });
 
   testWidgets('sleep chip saves an interval and settings stay editable', (
@@ -252,10 +332,7 @@ void main() {
     expect(find.text('07:00'), findsOneWidget);
     expect(find.text('45분'), findsWidgets);
     expect(find.text('60분'), findsOneWidget);
-    expect(
-      find.text('하이브리드 모드 최대 이동 시간 · 3시간'),
-      findsOneWidget,
-    );
+    expect(find.text('하이브리드 모드 최대 이동 시간 · 3시간'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.add_circle_outline).first);
     await tester.pumpAndSettle();

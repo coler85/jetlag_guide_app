@@ -36,6 +36,7 @@ class UserSettings {
     this.prepTime = const Duration(minutes: 45),
     this.commuteTime = const Duration(minutes: 60),
     this.hybridMaxShiftHours = 3,
+    this.homeShowupLead = const Duration(minutes: 95),
   });
 
   static const defaults = UserSettings();
@@ -55,6 +56,20 @@ class UserSettings {
   /// Largest circadian move Hybrid mode will apply, in whole hours (1–6).
   final int hybridMaxShiftHours;
 
+  /// How long before the outbound STD the crew shows up at home base,
+  /// when a journey does not name its own show-up. Clamped to 0–240 minutes.
+  final Duration homeShowupLead;
+
+  /// Leave home this long before [showupUtc].
+  DateTime departHomeUtc(DateTime showupUtc) {
+    return showupUtc.toUtc().subtract(normalized().commuteTime);
+  }
+
+  /// Wake this long before [departHomeUtc].
+  DateTime wakeForShowupUtc(DateTime showupUtc) {
+    return departHomeUtc(showupUtc).subtract(normalized().prepTime);
+  }
+
   /// Length of the usual night. A wake clock that is not after bedtime
   /// belongs to the next morning.
   Duration get usualSleep {
@@ -70,6 +85,7 @@ class UserSettings {
       prepTime: Duration(minutes: prepTime.inMinutes.clamp(0, 180)),
       commuteTime: Duration(minutes: commuteTime.inMinutes.clamp(0, 240)),
       hybridMaxShiftHours: hybridMaxShiftHours.clamp(1, 6),
+      homeShowupLead: Duration(minutes: homeShowupLead.inMinutes.clamp(0, 240)),
     );
   }
 
@@ -79,6 +95,7 @@ class UserSettings {
     Duration? prepTime,
     Duration? commuteTime,
     int? hybridMaxShiftHours,
+    Duration? homeShowupLead,
   }) {
     return UserSettings(
       defaultBedTime: defaultBedTime ?? this.defaultBedTime,
@@ -86,6 +103,7 @@ class UserSettings {
       prepTime: prepTime ?? this.prepTime,
       commuteTime: commuteTime ?? this.commuteTime,
       hybridMaxShiftHours: hybridMaxShiftHours ?? this.hybridMaxShiftHours,
+      homeShowupLead: homeShowupLead ?? this.homeShowupLead,
     ).normalized();
   }
 
@@ -96,7 +114,8 @@ class UserSettings {
         other.defaultWakeTime == defaultWakeTime &&
         other.prepTime == prepTime &&
         other.commuteTime == commuteTime &&
-        other.hybridMaxShiftHours == hybridMaxShiftHours;
+        other.hybridMaxShiftHours == hybridMaxShiftHours &&
+        other.homeShowupLead == homeShowupLead;
   }
 
   @override
@@ -106,5 +125,6 @@ class UserSettings {
     prepTime,
     commuteTime,
     hybridMaxShiftHours,
+    homeShowupLead,
   );
 }

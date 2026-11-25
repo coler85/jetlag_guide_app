@@ -1,19 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/flight_schedule_input.dart';
 import '../sample_schedule.dart';
+import '../services/ke_roster_gateway.dart';
 import '../state/jetlag_guide_controller.dart';
 import '../theme/jetlag_theme.dart';
+import '../widgets/manual_schedule_form.dart';
 import 'records_page.dart';
-import 'schedule_page.dart';
+import 'schedule_screen.dart';
 import 'timeline_page.dart';
 
 /// Home of the standalone app: timeline, schedule, and records/settings.
 ///
 /// [schedule] is the optional layover from a roster app or a deep link.
-/// [IndexedStack] keeps each tab mounted so scroll position and form state
-/// survive a tab change.
+/// When it is present at launch, the timeline is the first tab and the intake
+/// screen is skipped. [IndexedStack] keeps each tab mounted.
 class RootScreen extends StatefulWidget {
   const RootScreen({super.key, this.schedule});
 
@@ -24,17 +28,62 @@ class RootScreen extends StatefulWidget {
 }
 
 class _RootScreenState extends State<RootScreen> {
+  late final KeRosterGateway _roster;
+  late final StreamSubscription<FlightScheduleInput> _rosterSub;
+  JetlagGuideController? _listened;
   int _tab = 0;
   var _handedOff = false;
+  var _tabReady = false;
+  var _tabChosen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _roster = KeRosterGateway();
+    _roster.bind();
+    _rosterSub = _roster.incoming.listen(_onIncomingSchedule);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_consumeColdLink());
+    });
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final input = widget.schedule;
-    if (_handedOff || input == null) return;
-    _handedOff = true;
     final controller = context.read<JetlagGuideController>();
-    if (!controller.hasSchedule) controller.adoptSchedule(input);
+    if (!identical(_listened, controller)) {
+      _listened?.removeListener(_placeTab);
+      _listened = controller;
+      controller.addListener(_placeTab);
+    }
+    final injected = widget.schedule;
+    if (!_handedOff && injected != null) {
+      _handedOff = true;
+      if (!controller.hasSchedule) {
+        unawaited(controller.adoptSchedule(injected));
+      }
+    }
+    _placeTab();
+  }
+
+  @override
+  void dispose() {
+    _listened?.removeListener(_placeTab);
+    _rosterSub.cancel();
+    _roster.dispose();
+    super.dispose();
+  }
+
+  /// Opens the timeline once a saved layover is restored, otherwise the guide.
+  void _placeTab() {
+    if (_tabReady || !mounted) return;
+    final controller = _listened;
+    if (controller == null || !controller.isReady) return;
+    _tabReady = true;
+    if (_tabChosen) return;
+    final next = controller.hasSchedule ? 0 : 1;
+    if (_tab == next) return;
+    setState(() => _tab = next);
   }
 
   @override
@@ -53,13 +102,22 @@ class _RootScreenState extends State<RootScreen> {
               children: [
                 hasSchedule
                     ? TimelinePage(controller: controller)
-                    : const _ScheduleMissing(
-                        key: ValueKey('jetlag-empty-schedule'),
+                    : _ScheduleMissing(
+                        key: const ValueKey('jetlag-empty-schedule'),
+                        onOpenSchedule: () => setState(() => _tab = 1),
                       ),
-                hasSchedule
-                    ? SchedulePage(controller: controller)
-                    : const _ScheduleMissing(),
-                RecordsPage(controller: controller),
+                ScheduleScreen(
+                  controller: controller,
+                  roster: _roster,
+                  onSchedule: _onIncomingSchedule,
+                ),
+                RecordsPage(
+                  controller: controller,
+                  onScheduleCleared: () {
+                    if (!mounted) return;
+                    setState(() => _tab = 1);
+                  },
+                ),
               ],
             )
           : const Center(
@@ -69,7 +127,10 @@ class _RootScreenState extends State<RootScreen> {
       bottomNavigationBar: BottomNavigationBar(
         key: const ValueKey('jetlag-bottom-nav'),
         currentIndex: _tab,
-        onTap: (index) => setState(() => _tab = index),
+        onTap: (index) {
+          _tabChosen = true;
+          setState(() => _tab = index);
+        },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.timeline), label: '타임라인'),
           BottomNavigationBarItem(
@@ -81,10 +142,34 @@ class _RootScreenState extends State<RootScreen> {
       ),
     );
   }
+
+  Future<void> _consumeColdLink() async {
+    try {
+      final input = await _roster.takeInitialLink();
+      if (!mounted || input == null || widget.schedule != null) return;
+      _onIncomingSchedule(input);
+    } catch (error, stack) {
+      debugPrint('schedule launch link failed: $error\n$stack');
+    }
+  }
+
+  void _onIncomingSchedule(FlightScheduleInput input) {
+    if (!mounted) return;
+    unawaited(context.read<JetlagGuideController>().adoptSchedule(input));
+    setState(() => _tab = 0);
+    Navigator.of(context).popUntil((route) {
+      final name = route.settings.name;
+      return name != KeRosterGateway.waitRouteName &&
+          name != ManualScheduleForm.routeName &&
+          name != ScheduleScreen.parseRouteName;
+    });
+  }
 }
 
 class _ScheduleMissing extends StatelessWidget {
-  const _ScheduleMissing({super.key});
+  const _ScheduleMissing({super.key, required this.onOpenSchedule});
+
+  final VoidCallback onOpenSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -97,15 +182,23 @@ class _ScheduleMissing extends StatelessWidget {
             const Text('일정이 없습니다', style: JetlagTheme.title),
             const SizedBox(height: 8),
             const Text(
-              '로스터 앱이나 딥링크로 비행 일정이 들어오면 시차 가이드가 만들어집니다.',
+              '스케줄 탭에서 파일, KE Roster, 또는 직접 입력으로 비행 일정을 넣을 수 있습니다.',
               style: JetlagTheme.body,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton(
+              onPressed: onOpenSchedule,
+              child: const Text('스케줄 가져오기'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
               onPressed: () {
-                context.read<JetlagGuideController>().adoptSchedule(
-                  sampleFlightSchedule(),
+                unawaited(
+                  context.read<JetlagGuideController>().adoptSchedule(
+                    sampleFlightSchedule(),
+                    sample: true,
+                  ),
                 );
               },
               child: const Text('샘플 일정 보기'),

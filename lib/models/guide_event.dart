@@ -28,8 +28,7 @@ class GuideEvent {
   final String title;
   final String detail;
 
-  /// Pickup was not injected. The row stays visible so the bunk card can sit
-  /// under it.
+  /// The instant was not injected. The row stays visible as a placeholder.
   final bool missing;
 
   bool get isSpan => endUtc != null;

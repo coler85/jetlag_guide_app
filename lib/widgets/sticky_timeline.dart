@@ -13,6 +13,7 @@ import 'now_line.dart';
 class StickyTimeline extends StatelessWidget {
   const StickyTimeline({
     super.key,
+    required this.header,
     required this.sections,
     required this.schedule,
     required this.role,
@@ -21,6 +22,7 @@ class StickyTimeline extends StatelessWidget {
     required this.onDismissLog,
   });
 
+  final Widget header;
   final List<TimelineSection> sections;
   final JetlagScheduleSnapshot schedule;
   final JetlagCrewRole role;
@@ -34,6 +36,7 @@ class StickyTimeline extends StatelessWidget {
       key: const ValueKey('jetlag-timeline'),
       primary: false,
       slivers: [
+        header,
         for (final section in sections)
           if (section.markers.isNotEmpty) ...[
             if (section.hasDatedContent)

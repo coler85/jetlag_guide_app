@@ -161,7 +161,32 @@ void main() {
     expect(loaded.commuteTime, const Duration(minutes: 90));
     expect(loaded.hybridMaxShiftHours, 4);
     expect(loaded.usualSleep, const Duration(hours: 7, minutes: 45));
+    expect(loaded.homeShowupLead, const Duration(minutes: 95));
   });
+
+  test(
+    'home show-up lead is saved, restored, and kept within 0 to 240',
+    () async {
+      const store = UserSettingsStore();
+      expect(UserSettings.defaults.homeShowupLead, const Duration(minutes: 95));
+      expect((await store.load()).homeShowupLead, const Duration(minutes: 95));
+
+      await store.save(
+        const UserSettings(homeShowupLead: Duration(minutes: 120)),
+      );
+      expect((await store.load()).homeShowupLead, const Duration(minutes: 120));
+
+      await store.save(
+        const UserSettings(homeShowupLead: Duration(minutes: 500)),
+      );
+      expect((await store.load()).homeShowupLead, const Duration(minutes: 240));
+
+      await store.save(
+        const UserSettings(homeShowupLead: Duration(minutes: -15)),
+      );
+      expect((await store.load()).homeShowupLead, Duration.zero);
+    },
+  );
 }
 
 JetlagScheduleSnapshot _laxLayover() {

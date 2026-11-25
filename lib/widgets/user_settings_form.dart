@@ -60,6 +60,16 @@ class UserSettingsForm extends StatelessWidget {
             settings.copyWith(commuteTime: Duration(minutes: minutes)),
           ),
         ),
+        _DurationRow(
+          rowKey: const ValueKey('settings-home-showup'),
+          label: '홈베이스 쇼업 (출발 ${settings.homeShowupLead.inMinutes}분 전)',
+          minutes: settings.homeShowupLead.inMinutes,
+          maxMinutes: 240,
+          stepMinutes: 5,
+          onChanged: (minutes) => onChanged(
+            settings.copyWith(homeShowupLead: Duration(minutes: minutes)),
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
           '하이브리드 모드 최대 이동 시간 · ${settings.hybridMaxShiftHours}시간',
@@ -125,6 +135,7 @@ class _DurationRow extends StatelessWidget {
     required this.minutes,
     required this.onChanged,
     this.maxMinutes = 180,
+    this.stepMinutes = 15,
   });
 
   final Key rowKey;
@@ -132,6 +143,7 @@ class _DurationRow extends StatelessWidget {
   final int minutes;
   final ValueChanged<int> onChanged;
   final int maxMinutes;
+  final int stepMinutes;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +154,9 @@ class _DurationRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: JetlagTheme.body)),
           IconButton(
-            onPressed: minutes <= 0 ? null : () => onChanged(minutes - 15),
+            onPressed: minutes < stepMinutes
+                ? null
+                : () => onChanged(minutes - stepMinutes),
             icon: const Icon(Icons.remove_circle_outline),
           ),
           SizedBox(
@@ -154,9 +168,9 @@ class _DurationRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: minutes >= maxMinutes
+            onPressed: minutes + stepMinutes > maxMinutes
                 ? null
-                : () => onChanged(minutes + 15),
+                : () => onChanged(minutes + stepMinutes),
             icon: const Icon(Icons.add_circle_outline),
           ),
         ],

@@ -66,5 +66,26 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>app.jetlagguide.schedule</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>jetlagguide</string>
+			</array>
+		</dict>
+	</array>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>keroster</string>
+	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>스케줄 이미지를 선택해 비행 일정을 분석합니다.</string>
 </dict>
 </plist>

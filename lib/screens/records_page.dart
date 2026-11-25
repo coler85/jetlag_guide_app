@@ -13,9 +13,14 @@ import '../widgets/timezone_picker.dart';
 import '../widgets/user_settings_form.dart';
 
 class RecordsPage extends StatelessWidget {
-  const RecordsPage({super.key, required this.controller});
+  const RecordsPage({
+    super.key,
+    required this.controller,
+    this.onScheduleCleared,
+  });
 
   final JetlagGuideController controller;
+  final VoidCallback? onScheduleCleared;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +31,19 @@ class RecordsPage extends StatelessWidget {
       primary: false,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            key: const ValueKey('clear-schedule'),
+            onPressed: () {
+              unawaited(
+                _confirmClearSchedule(context, controller, onScheduleCleared),
+              );
+            },
+            child: const Text('일정 지우기'),
+          ),
+        ),
+        const SizedBox(height: 16),
         const Text('직군', style: JetlagTheme.caption),
         const SizedBox(height: 8),
         SegmentedButton<JetlagCrewRole>(
@@ -133,4 +151,36 @@ class RecordsPage extends StatelessWidget {
       ],
     );
   }
+}
+
+Future<void> _confirmClearSchedule(
+  BuildContext context,
+  JetlagGuideController controller,
+  VoidCallback? onCleared,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        key: const ValueKey('clear-schedule-dialog'),
+        title: const Text('일정 지우기'),
+        content: const Text('이 일정을 지우고 안내 화면으로 돌아갑니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            key: const ValueKey('clear-schedule-confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('지우기'),
+          ),
+        ],
+      );
+    },
+  );
+  if (confirmed != true || !context.mounted) return;
+  await controller.clearSchedule();
+  if (!context.mounted) return;
+  onCleared?.call();
 }

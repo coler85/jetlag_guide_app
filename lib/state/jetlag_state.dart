@@ -19,7 +19,7 @@ typedef JetLagPrefsLoader = Future<SharedPreferences> Function();
 /// - `timezone: ^0.11.1` — IANA conversion via `TZDateTime`
 ///
 /// `main` must call `initializeTimeZones()` from
-/// `package:timezone/data/latest.dart` before the first timeline build.
+/// `package:timezone/data/latest_all.dart` before the first timeline build.
 /// `ensureJetlagTimeZones` repeats that init if the call was skipped.
 class JetLagState extends ChangeNotifier {
   JetLagState({JetLagPrefsLoader? loadPreferences})

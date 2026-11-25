@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../logic/jetlag_clock.dart';
 import '../theme/jetlag_theme.dart';
+import 'wheel_time_picker.dart';
 
 /// Start and end of a sleep the crew is about to save. Both are UTC.
 class SleepInterval {
@@ -202,15 +203,9 @@ Future<DateTime?> pickWallInstant({
     lastDate: DateTime(wall.year + 2),
   );
   if (date == null || !context.mounted) return null;
-  final time = await showTimePicker(
+  final time = await showWheelTimePicker(
     context: context,
-    initialTime: TimeOfDay(hour: wall.hour, minute: wall.minute),
-    builder: (context, child) {
-      return MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child ?? const SizedBox.shrink(),
-      );
-    },
+    initial: TimeOfDay(hour: wall.hour, minute: wall.minute),
   );
   if (time == null) return null;
   return zonedUtc(
@@ -227,14 +222,5 @@ Future<TimeOfDay?> pickClockTime({
   required BuildContext context,
   required TimeOfDay initial,
 }) {
-  return showTimePicker(
-    context: context,
-    initialTime: initial,
-    builder: (context, child) {
-      return MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child ?? const SizedBox.shrink(),
-      );
-    },
-  );
+  return showWheelTimePicker(context: context, initial: initial);
 }

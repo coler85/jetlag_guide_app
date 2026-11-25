@@ -467,7 +467,8 @@ List<TimelineSection> buildTimelineSections({
   final laid = <TimelineMarker>[];
   for (final marker in markers) {
     laid.add(marker);
-    if (marker is EventMarker && marker.event.kind == GuideEventKind.pickup) {
+    if (marker is EventMarker &&
+        marker.event.kind == GuideEventKind.departure) {
       laid.add(BunkMarker(stamp: marker.stamp.toUtc(), dayKey: marker.dayKey));
     }
   }

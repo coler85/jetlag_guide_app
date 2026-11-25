@@ -11,6 +11,7 @@ class UserSettingsStore {
   static const prepKey = 'jetlag_guide_prep_minutes';
   static const commuteKey = 'jetlag_guide_commute_minutes';
   static const hybridKey = 'jetlag_guide_hybrid_max_shift_hours';
+  static const homeShowupLeadKey = 'jetlag_guide_home_showup_lead_minutes';
 
   Future<UserSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -29,6 +30,11 @@ class UserSettingsStore {
       ),
       hybridMaxShiftHours:
           prefs.getInt(hybridKey) ?? defaults.hybridMaxShiftHours,
+      homeShowupLead: Duration(
+        minutes:
+            prefs.getInt(homeShowupLeadKey) ??
+            defaults.homeShowupLead.inMinutes,
+      ),
     ).normalized();
   }
 
@@ -40,6 +46,7 @@ class UserSettingsStore {
     await prefs.setInt(prepKey, stored.prepTime.inMinutes);
     await prefs.setInt(commuteKey, stored.commuteTime.inMinutes);
     await prefs.setInt(hybridKey, stored.hybridMaxShiftHours);
+    await prefs.setInt(homeShowupLeadKey, stored.homeShowupLead.inMinutes);
   }
 
   DayTime _dayTime(int? minuteOfDay, DayTime fallback) {
