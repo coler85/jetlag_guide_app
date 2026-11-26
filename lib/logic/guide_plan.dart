@@ -19,8 +19,9 @@ class JetlagDashboard {
     required this.pickupZone,
     required this.dday,
     required this.remaining,
-    this.sleepDebtLabel = '0분',
+    this.sleepDebtLabel = '수면 기록 없음',
     this.sleepDebtInDebt = false,
+    this.sleepDebtRecorded = false,
   });
 
   final bool sleeping;
@@ -38,8 +39,10 @@ class JetlagDashboard {
   final String remaining;
 
   /// Signed balance against the usual night. Negative is a debt.
+  /// [sleepDebtLabel] is `수면 기록 없음` until [sleepDebtRecorded] is true.
   final String sleepDebtLabel;
   final bool sleepDebtInDebt;
+  final bool sleepDebtRecorded;
 }
 
 sealed class TimelineMarker {
@@ -323,8 +326,9 @@ JetlagDashboard buildDashboard({
   required List<CrewLog> logs,
   required DateTime now,
   List<SleepLog> sleepLogs = const [],
-  String sleepDebtLabel = '0분',
+  String sleepDebtLabel = '수면 기록 없음',
   bool sleepDebtInDebt = false,
+  bool sleepDebtRecorded = false,
 }) {
   final nowUtc = now.toUtc();
   final sleeping = isSleeping(
@@ -382,6 +386,7 @@ JetlagDashboard buildDashboard({
     remaining: pickup == null ? '시간 미정' : formatLead(pickup.difference(nowUtc)),
     sleepDebtLabel: sleepDebtLabel,
     sleepDebtInDebt: sleepDebtInDebt,
+    sleepDebtRecorded: sleepDebtRecorded,
   );
 }
 

@@ -11,7 +11,10 @@ class StatusDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final debtColor = data.sleepDebtInDebt
+    final neutral = !data.sleepDebtRecorded;
+    final debtColor = neutral
+        ? JetlagTheme.textSecondary
+        : data.sleepDebtInDebt
         ? JetlagTheme.debt
         : JetlagTheme.surplus;
     return Column(
@@ -37,12 +40,19 @@ class StatusDashboard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 const Expanded(child: Text('수면 부채', style: JetlagTheme.body)),
-                Text(
-                  data.sleepDebtLabel,
-                  key: const ValueKey('jetlag-sleep-debt-value'),
-                  style: JetlagTheme.clock.copyWith(
-                    color: debtColor,
-                    fontSize: 18,
+                Flexible(
+                  child: Text(
+                    data.sleepDebtLabel,
+                    key: const ValueKey('jetlag-sleep-debt-value'),
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: neutral
+                        ? JetlagTheme.body.copyWith(color: debtColor)
+                        : JetlagTheme.clock.copyWith(
+                            color: debtColor,
+                            fontSize: 18,
+                          ),
                   ),
                 ),
               ],

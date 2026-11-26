@@ -3,22 +3,25 @@ import 'home_departure.dart';
 
 /// Signed sleep balance. Negative means the crew is short of the usual night.
 class SleepDebtSnapshot {
-  const SleepDebtSnapshot(this.balance);
+  const SleepDebtSnapshot(this.balance, {this.recorded = true});
 
   final Duration balance;
 
-  bool get inDebt => balance.isNegative;
+  /// False until the crew has saved at least one sleep interval.
+  final bool recorded;
 
-  String get label => formatSleepBalance(balance);
+  bool get inDebt => recorded && balance.isNegative;
+
+  String get label => recorded ? formatSleepBalance(balance) : '수면 기록 없음';
 }
 
 class SleepDebtCalculator {
   const SleepDebtCalculator();
 
   /// Each logged night contributes actual minus usual.
-  /// A dawn report that has not been logged yet also subtracts its shortfall,
-  /// so the debt starts before the crew types the night in. A log that
-  /// overlaps that recommended window replaces the estimate.
+  /// With no saved night the balance stays zero. A dawn report that has not
+  /// been logged yet subtracts its shortfall only after the first night is in.
+  /// A log that overlaps that recommended window replaces the estimate.
   SleepDebtSnapshot evaluate({
     required Duration usual,
     required List<SleepLog> logs,
@@ -26,10 +29,12 @@ class SleepDebtCalculator {
   }) {
     var balance = Duration.zero;
     var coversPlan = false;
+    var recorded = false;
     final planStart = departure.recommendedStartUtc;
     final planEnd = departure.recommendedEndUtc;
     for (final log in logs) {
       if (!log.isValid) continue;
+      recorded = true;
       balance += log.duration - usual;
       if (departure.applies &&
           planStart != null &&
@@ -37,6 +42,9 @@ class SleepDebtCalculator {
           log.overlaps(planStart, planEnd)) {
         coversPlan = true;
       }
+    }
+    if (!recorded) {
+      return const SleepDebtSnapshot(Duration.zero, recorded: false);
     }
     if (departure.applies &&
         !coversPlan &&

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../logic/jetlag_clock.dart';
+import '../logic/layover_pickup.dart';
+import '../models/flight_leg.dart';
 import '../models/flight_schedule_input.dart';
 import '../models/jetlag_schedule.dart';
 import '../services/ke_roster_gateway.dart';
@@ -60,7 +62,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 children: [
                   if (controller.hasSchedule) ...[
                     _CurrentLayover(
+                      key: ValueKey(
+                        _headerIdentity(
+                          controller.journey,
+                          controller.schedule,
+                        ),
+                      ),
+                      journey: controller.journey,
                       schedule: controller.schedule,
+                      now: controller.now(),
                       onEditPickup: _editPickup,
                       onEdit: () => _openManualForm(edit: true),
                     ),
@@ -303,20 +313,54 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 }
 
-class _CurrentLayover extends StatelessWidget {
+class _CurrentLayover extends StatefulWidget {
   const _CurrentLayover({
+    super.key,
+    required this.journey,
     required this.schedule,
+    required this.now,
     required this.onEditPickup,
     required this.onEdit,
   });
 
+  final FlightScheduleInput? journey;
   final JetlagScheduleSnapshot schedule;
+  final DateTime now;
   final VoidCallback onEditPickup;
   final VoidCallback onEdit;
 
   @override
+  State<_CurrentLayover> createState() => _CurrentLayoverState();
+}
+
+class _CurrentLayoverState extends State<_CurrentLayover> {
+  late final PageController _pages;
+  late List<_HeaderCard> _cards;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _cards = _headerCards(widget.journey, widget.schedule);
+    _index = _headerIndex(widget.journey, widget.now, _cards.length);
+    _pages = PageController(initialPage: _index);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CurrentLayover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _cards = _headerCards(widget.journey, widget.schedule);
+    if (_index >= _cards.length) _index = _cards.length - 1;
+  }
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final pickup = schedule.pickupUtc;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: JetlagTheme.card,
@@ -324,46 +368,65 @@ class _CurrentLayover extends StatelessWidget {
         border: Border.all(color: JetlagTheme.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        padding: const EdgeInsets.fromLTRB(0, 14, 0, 4),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('현재 일정', style: JetlagTheme.caption),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (schedule.originLabel.isNotEmpty)
-                  Text(schedule.originLabel, style: JetlagTheme.clock),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('→', style: JetlagTheme.body),
-                ),
-                Text(schedule.stationLabel, style: JetlagTheme.clock),
-              ],
+            SizedBox(
+              height: 132,
+              child: PageView(
+                key: const ValueKey('schedule-header-page'),
+                controller: _pages,
+                physics: _cards.length < 2
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
+                onPageChanged: (index) => setState(() => _index = index),
+                children: [for (final card in _cards) _cardBody(card)],
+              ),
             ),
-            if (schedule.flightNumber.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(schedule.flightNumber, style: JetlagTheme.body),
+            if (_cards.length > 1) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < _cards.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: DecoratedBox(
+                        key: ValueKey(
+                          i == _index
+                              ? 'schedule-header-dot-$i-on'
+                              : 'schedule-header-dot-$i',
+                        ),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == _index
+                              ? JetlagTheme.duty
+                              : JetlagTheme.border,
+                        ),
+                        child: const SizedBox(width: 6, height: 6),
+                      ),
+                    ),
+                ],
+              ),
             ],
-            const SizedBox(height: 4),
-            Text(
-              pickup == null ? '픽업 미입력' : '픽업 ${_clocks(pickup)}',
-              style: JetlagTheme.caption,
-            ),
             Align(
               alignment: Alignment.centerLeft,
-              child: Row(
-                children: [
-                  TextButton(
-                    key: const ValueKey('schedule-edit'),
-                    onPressed: onEdit,
-                    child: const Text('일정 수정'),
-                  ),
-                  TextButton(
-                    onPressed: onEditPickup,
-                    child: const Text('픽업 시간 수정'),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Row(
+                  children: [
+                    TextButton(
+                      key: const ValueKey('schedule-edit'),
+                      onPressed: widget.onEdit,
+                      child: const Text('일정 수정'),
+                    ),
+                    TextButton(
+                      onPressed: widget.onEditPickup,
+                      child: const Text('픽업 시간 수정'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -372,15 +435,197 @@ class _CurrentLayover extends StatelessWidget {
     );
   }
 
-  String _clocks(DateTime utc) {
-    final local = formatHm(utc, schedule.localTimeZone);
-    final homeZone = zoneAbbreviation(utc, schedule.referenceTimeZone);
-    if (schedule.localTimeZone == schedule.referenceTimeZone) {
-      return '$local $homeZone';
-    }
-    final home = formatHm(utc, schedule.referenceTimeZone);
-    return '$local ${schedule.stationLabel} · $home $homeZone';
+  Widget _cardBody(_HeaderCard card) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(card.kicker, style: JetlagTheme.caption),
+          const SizedBox(height: 8),
+          _route(card.route),
+          if (card.flight.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(card.flight, style: JetlagTheme.body),
+          ],
+          for (final line in card.lines) ...[
+            const SizedBox(height: 4),
+            Text(line, style: JetlagTheme.caption),
+          ],
+        ],
+      ),
+    );
   }
+
+  Widget _route(List<String> codes) {
+    return Row(
+      children: [
+        for (var i = 0; i < codes.length; i++) ...[
+          if (i > 0)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('→', style: JetlagTheme.body),
+            ),
+          Text(codes[i], style: JetlagTheme.clock),
+        ],
+      ],
+    );
+  }
+}
+
+class _HeaderCard {
+  const _HeaderCard({
+    required this.kicker,
+    required this.route,
+    this.flight = '',
+    this.lines = const [],
+  });
+
+  final String kicker;
+  final List<String> route;
+  final String flight;
+  final List<String> lines;
+}
+
+String _headerIdentity(
+  FlightScheduleInput? journey,
+  JetlagScheduleSnapshot schedule,
+) {
+  final out = journey?.outbound;
+  final back = journey?.returning;
+  return '${out?.origin}|${out?.stdUtc.toIso8601String()}|'
+      '${back?.origin}|${back?.stdUtc.toIso8601String()}|${schedule.key}';
+}
+
+List<_HeaderCard> _headerCards(
+  FlightScheduleInput? journey,
+  JetlagScheduleSnapshot schedule,
+) {
+  final out = journey?.outbound;
+  final back = journey?.returning;
+  final roundTrip =
+      out != null &&
+      back != null &&
+      out.arrivesAfterDeparture &&
+      back.arrivesAfterDeparture;
+  if (roundTrip) {
+    return [
+      _flightCard('가는 편', out),
+      _layoverCard(out, back, journey!),
+      _flightCard('오는 편', back),
+    ];
+  }
+  if (out != null && back == null && out.arrivesAfterDeparture) {
+    return [_flightCard('가는 편', out)];
+  }
+  if (journey != null &&
+      journey.returnOnly &&
+      journey.returning!.arrivesAfterDeparture) {
+    return [_flightCard('오는 편', journey.returning!)];
+  }
+  return [_legacyCard(schedule)];
+}
+
+int _headerIndex(FlightScheduleInput? journey, DateTime now, int count) {
+  if (count < 3) return 0;
+  final out = journey?.outbound;
+  final back = journey?.returning;
+  if (out == null || back == null) return 0;
+  final instant = now.toUtc();
+  if (instant.isBefore(out.staUtc)) return 0;
+  if (instant.isBefore(back.stdUtc)) return 1;
+  return 2;
+}
+
+_HeaderCard _flightCard(String kicker, FlightLeg leg) {
+  final originZone = leg.originTimeZone.trim().isEmpty
+      ? leg.destinationTimeZone
+      : leg.originTimeZone;
+  return _HeaderCard(
+    kicker: kicker,
+    route: [leg.origin, leg.destination],
+    flight: leg.flightNumber,
+    lines: [
+      '출발 ${_localClock(leg.stdUtc, originZone)}',
+      '도착 ${_localClock(leg.staUtc, leg.destinationTimeZone)}',
+    ],
+  );
+}
+
+_HeaderCard _layoverCard(
+  FlightLeg outbound,
+  FlightLeg returning,
+  FlightScheduleInput journey,
+) {
+  final zone = outbound.destinationTimeZone;
+  final pickup = journey.layoverPickupUtc;
+  return _HeaderCard(
+    kicker: '레이오버',
+    route: [outbound.destination],
+    lines: [
+      '도착 ${_localClock(outbound.staUtc, zone)}',
+      '출발 ${_localClock(returning.stdUtc, zone)}',
+      pickup == null
+          ? '픽업 미입력'
+          : '픽업 ${_pickupWithLead(pickup, returning.stdUtc, zone)}',
+    ],
+  );
+}
+
+_HeaderCard _legacyCard(JetlagScheduleSnapshot schedule) {
+  final pickup = schedule.pickupUtc;
+  return _HeaderCard(
+    kicker: '현재 일정',
+    route: [
+      if (schedule.originLabel.isNotEmpty) schedule.originLabel,
+      schedule.stationLabel,
+    ],
+    flight: schedule.flightNumber,
+    lines: [
+      pickup == null
+          ? '픽업 미입력'
+          : '픽업 ${_placedClock(pickup, schedule.localTimeZone, schedule.referenceTimeZone, schedule.stationLabel)}',
+    ],
+  );
+}
+
+String _pickupWithLead(DateTime pickup, DateTime departure, String zone) {
+  final hm = _hm(pickup, zone);
+  final lead = pickupRelativeToDeparture(pickupLeadMinutes(departure, pickup));
+  return '$hm ($lead)';
+}
+
+String _hm(DateTime utc, String zone) {
+  final iana = zone.trim();
+  if (iana.isEmpty) return formatUtcHm(utc);
+  try {
+    return formatHm(utc, iana);
+  } catch (_) {
+    return formatUtcHm(utc);
+  }
+}
+
+String _localClock(DateTime utc, String zone) {
+  final iana = zone.trim();
+  if (iana.isEmpty) return '${formatUtcHm(utc)}Z';
+  try {
+    return '${formatHm(utc, iana)} ${zoneAbbreviation(utc, iana)}';
+  } catch (_) {
+    return '${formatUtcHm(utc)}Z';
+  }
+}
+
+String _placedClock(
+  DateTime utc,
+  String localZone,
+  String homeZone,
+  String station,
+) {
+  final local = formatHm(utc, localZone);
+  final homeName = zoneAbbreviation(utc, homeZone);
+  if (localZone == homeZone) return '$local $homeName';
+  final home = formatHm(utc, homeZone);
+  return '$local $station · $home $homeName';
 }
 
 class _ParseProgressDialog extends StatelessWidget {

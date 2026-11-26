@@ -168,6 +168,7 @@ class JetLagCalculator {
         now: nowUtc,
         sleepDebtLabel: debt.label,
         sleepDebtInDebt: debt.inDebt,
+        sleepDebtRecorded: debt.recorded,
       ),
       sections: buildTimelineSections(
         schedule: effective,

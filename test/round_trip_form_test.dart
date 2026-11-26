@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jetlag_guide_app/logic/jetlag_clock.dart';
+import 'package:jetlag_guide_app/logic/layover_pickup.dart';
 import 'package:jetlag_guide_app/main.dart';
 import 'package:jetlag_guide_app/models/bunk_shift.dart';
 import 'package:jetlag_guide_app/models/flight_leg.dart';
@@ -17,6 +18,119 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     ensureJetlagTimeZones();
+  });
+
+  test('a pickup lead keeps exact minutes and converts both ways', () {
+    final departure = DateTime.utc(2026, 11, 28, 3);
+    expect(pickupRelativeToDeparture(120), '출발 2시간 전');
+    expect(pickupRelativeToDeparture(130), '출발 2시간 10분 전');
+    expect(pickupRelativeToDeparture(127), '출발 2시간 7분 전');
+    expect(
+      pickupLeadMinutes(departure, DateTime.utc(2026, 11, 28, 0, 53)),
+      127,
+    );
+    expect(
+      pickupUtcFromLead(departure, 130),
+      DateTime.utc(2026, 11, 28, 0, 50),
+    );
+    expect(stepPickupLead(127, 1), 137);
+    expect(stepPickupLead(127, 1) % 10, isNot(0));
+  });
+
+  testWidgets('the pickup lead and the clock stay in step', (tester) async {
+    FlightScheduleInput? saved;
+    await _pump(
+      tester,
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return TextButton(
+              onPressed: () async {
+                saved = await Navigator.push<FlightScheduleInput>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ManualScheduleForm(
+                      timeZone: 'Asia/Seoul',
+                      referenceTimeZone: 'Asia/Seoul',
+                      initial: _pickupTrip(DateTime.utc(2026, 11, 28, 1)),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('열기'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.text('열기'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('오는 편 출발 2시간 전'), findsOneWidget);
+    expect(find.textContaining('02:00'), findsWidgets);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('manual-layover-lead-step')),
+        matching: find.byIcon(Icons.add_circle_outline),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('오는 편 출발 2시간 10분 전'), findsOneWidget);
+    expect(find.textContaining('01:50'), findsWidgets);
+    await tester.tap(find.byKey(const ValueKey('manual-save')));
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotNull);
+    expect(saved!.layoverPickupUtc, DateTime.utc(2026, 11, 28, 0, 50));
+  });
+
+  testWidgets('a pickup clock off the 10-minute grid keeps its minutes', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _formApp(initial: _pickupTrip(DateTime.utc(2026, 11, 28, 0, 53))),
+    );
+
+    expect(find.text('오는 편 출발 2시간 7분 전'), findsOneWidget);
+    expect(find.textContaining('2시간 10분'), findsNothing);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('manual-layover-lead-step')),
+        matching: find.byIcon(Icons.add_circle_outline),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('오는 편 출발 2시간 17분 전'), findsOneWidget);
+    expect(find.textContaining('01:43'), findsWidgets);
+  });
+
+  testWidgets('a layover without a return flight has no lead control', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _formApp(
+        initial: FlightScheduleInput(
+          flightNumber: 'XX000',
+          origin: 'BBB',
+          destination: 'AAA',
+          destinationTimeZone: 'Etc/UTC',
+          sta: DateTime.utc(2026, 11, 22, 8),
+          std: DateTime.utc(2026, 11, 22, 18),
+          pickup: DateTime.utc(2026, 11, 22, 14),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('manual-layover-pickup')), findsOneWidget);
+    expect(find.byKey(const ValueKey('manual-layover-lead')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('manual-layover-lead-step')),
+      findsNothing,
+    );
+    expect(find.textContaining('오는 편 출발'), findsNothing);
   });
 
   testWidgets('the form fits a phone width', (tester) async {
@@ -296,6 +410,31 @@ void main() {
     expect(find.text('ICN 시간대 · Asia/Seoul'), findsWidgets);
     expect(find.text('AMS 시간대 · Europe/Amsterdam'), findsWidgets);
   });
+}
+
+FlightScheduleInput _pickupTrip(DateTime pickupUtc) {
+  return FlightScheduleInput.journey(
+    outbound: FlightLeg(
+      flightNumber: 'XX000',
+      origin: 'ICN',
+      destination: 'AMS',
+      originTimeZone: 'Asia/Seoul',
+      destinationTimeZone: 'Europe/Amsterdam',
+      std: DateTime.utc(2026, 11, 26, 1),
+      sta: DateTime.utc(2026, 11, 26, 10),
+    ),
+    returning: FlightLeg(
+      flightNumber: 'XX001',
+      origin: 'ICN',
+      destination: 'AMS',
+      originTimeZone: 'Asia/Seoul',
+      destinationTimeZone: 'Europe/Amsterdam',
+      std: DateTime.utc(2026, 11, 28, 3),
+      sta: DateTime.utc(2026, 11, 28, 12),
+    ),
+    layoverPickup: pickupUtc,
+    referenceTimeZone: 'Asia/Seoul',
+  );
 }
 
 Future<void> _pump(WidgetTester tester, Widget app) async {

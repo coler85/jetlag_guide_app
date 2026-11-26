@@ -79,8 +79,9 @@ void main() {
     );
     expect(early.single.startUtc, DateTime.utc(2026, 6, 4, 10, 15));
     expect(early.single.endUtc, DateTime.utc(2026, 6, 4, 18, 15));
-    expect(timeline.dashboard.sleepDebtLabel, '-3시간 45분');
-    expect(timeline.dashboard.sleepDebtInDebt, isTrue);
+    expect(timeline.dashboard.sleepDebtLabel, '수면 기록 없음');
+    expect(timeline.dashboard.sleepDebtInDebt, isFalse);
+    expect(timeline.dashboard.sleepDebtRecorded, isFalse);
 
     final logged = const JetLagCalculator().calculate(
       schedule: schedule,
@@ -99,6 +100,50 @@ void main() {
     );
     expect(logged.dashboard.sleepDebtLabel, '-2시간 30분');
     expect(logged.dashboard.sleepDebtInDebt, isTrue);
+    expect(logged.dashboard.sleepDebtRecorded, isTrue);
+  });
+
+  test('sleep debt is zero with no logs, then the logged night, then zero', () {
+    final schedule = _laxLayover();
+    final departure = const HomeDepartureAdvisor().evaluate(
+      schedule: schedule,
+      settings: UserSettings.defaults,
+    );
+    const calculator = SleepDebtCalculator();
+    const usual = Duration(hours: 8);
+    final night = SleepLog(
+      id: 'night',
+      startUtc: DateTime.utc(2026, 6, 4, 10, 15),
+      endUtc: DateTime.utc(2026, 6, 4, 15, 45),
+      scheduleKey: schedule.key,
+    );
+
+    final empty = calculator.evaluate(
+      usual: usual,
+      logs: const [],
+      departure: departure,
+    );
+    expect(empty.balance, Duration.zero);
+    expect(empty.label, '수면 기록 없음');
+    expect(empty.inDebt, isFalse);
+
+    final logged = calculator.evaluate(
+      usual: usual,
+      logs: [night],
+      departure: departure,
+    );
+    expect(logged.balance, const Duration(hours: -2, minutes: -30));
+    expect(logged.label, '-2시간 30분');
+    expect(logged.inDebt, isTrue);
+
+    final cleared = calculator.evaluate(
+      usual: usual,
+      logs: const [],
+      departure: departure,
+    );
+    expect(cleared.balance, Duration.zero);
+    expect(cleared.label, '수면 기록 없음');
+    expect(cleared.inDebt, isFalse);
   });
 
   test('a full logged night clears the show-up estimate', () {

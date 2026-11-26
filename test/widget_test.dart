@@ -12,6 +12,7 @@ import 'package:jetlag_guide_app/models/jetlag_schedule.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
 import 'package:jetlag_guide_app/sample_schedule.dart';
 import 'package:jetlag_guide_app/screens/jetlag_guide_shell.dart';
+import 'package:jetlag_guide_app/theme/jetlag_theme.dart';
 import 'package:jetlag_guide_app/screens/timeline_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -312,7 +313,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('jetlag-sleep-debt')), findsOneWidget);
-    expect(find.text('-3시간 45분'), findsOneWidget);
+    expect(find.text('수면 기록 없음'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('수면 기록 없음')).style?.color,
+      isNot(JetlagTheme.debt),
+    );
 
     await tester.tap(find.byKey(const ValueKey('log-sleep')));
     await tester.pumpAndSettle();
@@ -337,6 +342,26 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_circle_outline).first);
     await tester.pumpAndSettle();
     expect(find.text('60분'), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.byIcon(Icons.close),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('jetlag-records-page')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('타임라인'));
+    await tester.pumpAndSettle();
+    expect(find.text('수면 기록 없음'), findsOneWidget);
+    expect(find.text('0분'), findsNothing);
+    expect(
+      tester.widget<Text>(find.text('수면 기록 없음')).style?.color,
+      isNot(JetlagTheme.debt),
+    );
   });
 }
 

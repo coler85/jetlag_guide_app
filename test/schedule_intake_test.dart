@@ -460,6 +460,130 @@ void main() {
     expect(find.text(ScheduleScreen.recognitionPending), findsOneWidget);
     expect(find.byKey(const ValueKey('manual-schedule-form')), findsOneWidget);
   });
+
+  testWidgets('the schedule header opens the card for now and swipes', (
+    tester,
+  ) async {
+    ensureJetlagTimeZones();
+    final trip = _headerTrip();
+
+    await _showSchedule(tester, trip, DateTime.utc(2026, 11, 26, 4));
+    expect(
+      find.byKey(const ValueKey('schedule-header-dot-0-on')),
+      findsOneWidget,
+    );
+    expect(find.text('가는 편'), findsOneWidget);
+    expect(find.text('XX000'), findsOneWidget);
+
+    await _showSchedule(tester, trip, DateTime.utc(2026, 11, 26, 12));
+    expect(
+      find.byKey(const ValueKey('schedule-header-dot-1-on')),
+      findsOneWidget,
+    );
+    expect(find.text('레이오버'), findsOneWidget);
+    expect(find.text('픽업 16:50 (출발 2시간 10분 전)'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('schedule-header-page')),
+      const Offset(-700, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('schedule-header-dot-2-on')),
+      findsOneWidget,
+    );
+    expect(find.text('오는 편'), findsOneWidget);
+    expect(find.text('XX001'), findsOneWidget);
+
+    await _showSchedule(tester, trip, DateTime.utc(2026, 11, 26, 19));
+    expect(
+      find.byKey(const ValueKey('schedule-header-dot-2-on')),
+      findsOneWidget,
+    );
+    expect(find.text('AMS'), findsWidgets);
+    expect(find.text('ICN'), findsWidgets);
+  });
+
+  testWidgets('a return-only record is one header card', (tester) async {
+    ensureJetlagTimeZones();
+    await _showSchedule(
+      tester,
+      FlightScheduleInput(
+        flightNumber: 'XX000',
+        origin: 'ICN',
+        destination: 'AMS',
+        destinationTimeZone: 'Europe/Amsterdam',
+        referenceTimeZone: 'Asia/Seoul',
+        sta: DateTime.utc(2026, 11, 26, 8),
+        std: DateTime.utc(2026, 11, 26, 18),
+      ),
+      DateTime.utc(2026, 11, 26, 12),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('현재 일정'), findsOneWidget);
+    expect(find.text('ICN'), findsOneWidget);
+    expect(find.text('가는 편'), findsNothing);
+    expect(find.text('오는 편'), findsNothing);
+    expect(find.byKey(const ValueKey('schedule-header-dot-0')), findsNothing);
+  });
+}
+
+FlightScheduleInput _headerTrip() {
+  return FlightScheduleInput.journey(
+    outbound: FlightLeg(
+      flightNumber: 'XX000',
+      origin: 'ICN',
+      destination: 'AMS',
+      originTimeZone: 'Asia/Seoul',
+      destinationTimeZone: 'Europe/Amsterdam',
+      std: DateTime.utc(2026, 11, 26, 1),
+      sta: DateTime.utc(2026, 11, 26, 8),
+    ),
+    returning: FlightLeg(
+      flightNumber: 'XX001',
+      origin: 'AMS',
+      destination: 'ICN',
+      originTimeZone: 'Europe/Amsterdam',
+      destinationTimeZone: 'Asia/Seoul',
+      std: DateTime.utc(2026, 11, 26, 18),
+      sta: DateTime.utc(2026, 11, 27, 4),
+    ),
+    layoverPickup: DateTime.utc(2026, 11, 26, 15, 50),
+    referenceTimeZone: 'Asia/Seoul',
+  );
+}
+
+Future<void> _showSchedule(
+  WidgetTester tester,
+  FlightScheduleInput input,
+  DateTime now,
+) async {
+  final controller = JetlagGuideController(
+    logStore: const JetlagLogStore(),
+    alerts: _SilentAlerts(),
+    now: () => now,
+  );
+  final roster = KeRosterGateway(
+    canOpen: (_) async => false,
+    openUri: (_) async => true,
+  );
+  addTearDown(controller.dispose);
+  addTearDown(roster.dispose);
+  await controller.adoptSchedule(input);
+  await tester.pumpWidget(const SizedBox());
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: ScheduleScreen(
+          controller: controller,
+          roster: roster,
+          onSchedule: (_) {},
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 FlightScheduleInput _icnAmsJourney({DateTime? homeShowup}) {

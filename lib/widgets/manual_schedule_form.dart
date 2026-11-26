@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/airport_zones.dart';
 import '../logic/home_base_timezone.dart';
 import '../logic/jetlag_clock.dart';
+import '../logic/layover_pickup.dart';
 import '../models/bunk_shift.dart';
 import '../models/flight_leg.dart';
 import '../models/flight_schedule_input.dart';
@@ -200,12 +201,14 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
             value: _includePickup,
             onChanged: (value) => setState(() => _includePickup = value),
           ),
-          if (_includePickup)
+          if (_includePickup) ...[
             _WhenRow(
               rowKey: const ValueKey('manual-layover-pickup'),
               label: '픽업',
               place: _place(_layoverCode()),
               value: _stamp(_pickupDay, _pickupTime),
+              note: _leadNote(_leadMinutes()),
+              noteKey: const ValueKey('manual-layover-lead'),
               onTap: () => _pickWhen(
                 day: _pickupDay,
                 time: _pickupTime,
@@ -215,6 +218,8 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
                 }),
               ),
             ),
+            if (_leadMinutes() != null) _leadStepper(_leadMinutes()!),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -577,6 +582,66 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
     return _airport(_out.destination) ?? _airport(_ret.origin);
   }
 
+  /// Return departure, when the return leg is a real flight.
+  DateTime? _returnDepartureUtc() {
+    if (!_started(_ret, true)) return null;
+    final std = _tryInstant(_ret.originZone, _ret.stdDay, _ret.stdTime);
+    final sta = _tryInstant(_ret.destinationZone, _ret.staDay, _ret.staTime);
+    if (std == null || sta == null || !sta.isAfter(std)) return null;
+    return std;
+  }
+
+  int? _leadMinutes() {
+    final departure = _returnDepartureUtc();
+    if (departure == null) return null;
+    final pickup = _tryInstant(_layoverZone(), _pickupDay, _pickupTime);
+    if (pickup == null) return null;
+    return pickupLeadMinutes(departure, pickup);
+  }
+
+  String? _leadNote(int? minutes) {
+    if (minutes == null) return null;
+    return '오는 편 ${pickupRelativeToDeparture(minutes)}';
+  }
+
+  void _applyLead(int minutes) {
+    final departure = _returnDepartureUtc();
+    if (departure == null) return;
+    final pickup = pickupUtcFromLead(departure, minutes);
+    final split = _split(pickup, _layoverZone());
+    setState(() {
+      _pickupDay = split.$1;
+      _pickupTime = split.$2;
+    });
+  }
+
+  Widget _leadStepper(int minutes) {
+    return Row(
+      key: const ValueKey('manual-layover-lead-step'),
+      children: [
+        IconButton(
+          onPressed: minutes <= 0
+              ? null
+              : () => _applyLead(stepPickupLead(minutes, -1)),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+        Expanded(
+          child: Text(
+            pickupRelativeToDeparture(minutes),
+            textAlign: TextAlign.center,
+            style: JetlagTheme.body,
+          ),
+        ),
+        IconButton(
+          onPressed: minutes >= pickupLeadMaxMinutes
+              ? null
+              : () => _applyLead(stepPickupLead(minutes, 1)),
+          icon: const Icon(Icons.add_circle_outline),
+        ),
+      ],
+    );
+  }
+
   String? _airport(TextEditingController controller) =>
       _airportText(controller.text);
 
@@ -809,6 +874,8 @@ class _WhenRow extends StatelessWidget {
     required this.label,
     required this.place,
     required this.value,
+    this.note,
+    this.noteKey,
     required this.onTap,
   });
 
@@ -816,6 +883,8 @@ class _WhenRow extends StatelessWidget {
   final String label;
   final String place;
   final String value;
+  final String? note;
+  final Key? noteKey;
   final VoidCallback onTap;
 
   @override
@@ -832,6 +901,10 @@ class _WhenRow extends StatelessWidget {
             Text(place, style: JetlagTheme.caption),
             const SizedBox(height: 2),
             Text(value, style: JetlagTheme.localClock),
+            if (note != null) ...[
+              const SizedBox(height: 2),
+              Text(note!, key: noteKey, style: JetlagTheme.caption),
+            ],
           ],
         ),
       ),
