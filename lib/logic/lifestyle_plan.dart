@@ -37,6 +37,7 @@ List<GuideEvent> lifestyleBlocks({
     _withPreDepartureSleep(
       schedule,
       settings,
+      lifestyle,
       windows.isEmpty
           ? _firstSleepAfterArrival(schedule, lifestyle, settings)
           : windows,
@@ -87,7 +88,8 @@ List<GuideEvent> lifestyleBlocks({
         detail:
             sleep.detail ??
             (sleep.earlyShowUp
-                ? '새벽 쇼업에 맞춰 미리 잡니다. 알람 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
+                ? '${_preDepartureDetail(schedule)} '
+                      '알람 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
                 : lifestyle.sleepDetailFor(
                     schedule.referenceTimeZone,
                     hybridMaxShiftHours: settings.hybridMaxShiftHours,
@@ -133,16 +135,25 @@ bool _insideSleep(DateTime instant, List<_SleepWindow> sleeps) {
   );
 }
 
-/// Last sleep before departure. A window that already ends at this wake
-/// (the dawn show-up block) is left as it is. A mode night that overlaps
-/// the new block is removed, except a prefix of at least one cycle that
-/// ends when this sleep starts. [_mergeCloseSleeps] then joins any pair
-/// whose gap is under [kSleepMergeGap].
+/// Last sleep before departure, only when the pickup (or, with no pickup,
+/// departure minus the show-up lead) falls in that mode's night.
+///
+/// The wake is still pickup − prep − commute when a 90-minute cycle fits,
+/// otherwise departure − show-up lead − prep − commute. A window that
+/// already ends at this wake is left as it is. A mode night that overlaps
+/// the new block keeps a prefix of at least one cycle. [_mergeCloseSleeps]
+/// then joins any pair whose gap is under [kSleepMergeGap].
 List<_SleepWindow> _withPreDepartureSleep(
   JetlagScheduleSnapshot schedule,
   UserSettings settings,
+  JetlagLifestyle lifestyle,
   List<_SleepWindow> windows,
 ) {
+  final anchor = _departureAnchor(schedule, settings);
+  if (anchor == null ||
+      !_inModeNight(anchor, _modeClock(schedule, lifestyle, settings))) {
+    return windows;
+  }
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
   final wake = const HomeDepartureAdvisor().preDepartureWake(
@@ -163,7 +174,7 @@ List<_SleepWindow> _withPreDepartureSleep(
   final departure = _SleepWindow(
     startUtc: block.startUtc,
     endUtc: block.endUtc,
-    detail: '출발 준비에 맞춰 미리 잡니다.',
+    detail: _preDepartureDetail(schedule),
   );
   final kept = <_SleepWindow>[];
   for (final window in windows) {
@@ -340,6 +351,38 @@ List<_SleepWindow> _withHomeDeparture(
 
 bool _rangesOverlap(DateTime a0, DateTime a1, DateTime b0, DateTime b1) {
   return a0.isBefore(b1) && b0.isBefore(a1);
+}
+
+String _preDepartureDetail(JetlagScheduleSnapshot schedule) {
+  return schedule.pickupUtc == null
+      ? '출발 시각에 맞춰 잡은 수면입니다.'
+      : '출발 전 픽업에 맞춰 잡은 수면입니다.';
+}
+
+/// Pickup when the layover has one. Otherwise the outbound departure minus
+/// the home show-up lead.
+DateTime? _departureAnchor(
+  JetlagScheduleSnapshot schedule,
+  UserSettings settings,
+) {
+  final pickup = schedule.pickupUtc?.toUtc();
+  if (pickup != null) return pickup;
+  final std = schedule.stdUtc.toUtc();
+  if (!std.isAfter(schedule.staUtc.toUtc())) return null;
+  return std.subtract(settings.homeShowupLead);
+}
+
+/// True when [instant] sits in the mode night, from bedtime up to wake.
+/// Hybrid uses the shifted home clock. Wake itself is morning, not night.
+bool _inModeNight(DateTime instant, _ModeClock clock) {
+  final utc = instant.toUtc();
+  final wall = wallClock(utc, clock.zone);
+  final day = DateTime(wall.year, wall.month, wall.day);
+  for (final delta in const [-1, 0, 1]) {
+    final night = clock.nightOn(DateTime(day.year, day.month, day.day + delta));
+    if (!utc.isBefore(night.bed) && utc.isBefore(night.wake)) return true;
+  }
+  return false;
 }
 
 class _ModeClock {

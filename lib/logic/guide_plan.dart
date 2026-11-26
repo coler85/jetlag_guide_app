@@ -6,6 +6,7 @@ import '../models/sleep_log.dart';
 import '../models/user_settings.dart';
 import 'jetlag_clock.dart';
 import 'lifestyle_plan.dart';
+import 'sleep_overlap.dart';
 
 class JetlagDashboard {
   const JetlagDashboard({
@@ -100,6 +101,30 @@ class BunkMarker extends TimelineMarker {
   final String dayKey;
 }
 
+/// Planned sleep drawn together with the recorded sleep that overlaps it.
+class SleepOverlapMarker extends TimelineMarker {
+  SleepOverlapMarker({
+    required this.overlap,
+    required this.dimmed,
+    required this.dayKey,
+  });
+
+  final SleepOverlap overlap;
+  final bool dimmed;
+
+  @override
+  final String dayKey;
+
+  @override
+  DateTime get stamp {
+    var earliest = overlap.plan.startUtc;
+    for (final log in overlap.logs) {
+      if (log.startUtc.isBefore(earliest)) earliest = log.startUtc;
+    }
+    return earliest;
+  }
+}
+
 class TimelineSection {
   TimelineSection({
     required this.dayKey,
@@ -113,8 +138,12 @@ class TimelineSection {
 
   /// True when this date owns a guide event or a crew log.
   /// A now-line by itself is not a date group.
-  bool get hasDatedContent =>
-      markers.any((marker) => marker is EventMarker || marker is LogMarker);
+  bool get hasDatedContent => markers.any(
+    (marker) =>
+        marker is EventMarker ||
+        marker is LogMarker ||
+        marker is SleepOverlapMarker,
+  );
 }
 
 List<GuideEvent> buildGuideEvents(
@@ -413,6 +442,7 @@ String _dualZone(
 int _markerRank(TimelineMarker marker) {
   return switch (marker) {
     EventMarker() => 0,
+    SleepOverlapMarker() => 0,
     LogMarker() => 1,
     BunkMarker() => 2,
     NowMarker() => 3,
@@ -423,6 +453,23 @@ bool _eventDimmed(GuideEvent event, DateTime nowUtc) {
   if (event.missing) return false;
   final end = (event.endUtc ?? event.startUtc).toUtc();
   return !end.isAfter(nowUtc);
+}
+
+DateTime _overlapStamp(SleepOverlap overlap) {
+  var earliest = overlap.plan.startUtc;
+  for (final log in overlap.logs) {
+    if (log.startUtc.isBefore(earliest)) earliest = log.startUtc;
+  }
+  return earliest;
+}
+
+DateTime _overlapEnd(SleepOverlap overlap) {
+  var latest = overlap.plan.endUtc ?? overlap.plan.startUtc;
+  for (final log in overlap.logs) {
+    final end = log.endUtc ?? log.startUtc;
+    if (end.isAfter(latest)) latest = end;
+  }
+  return latest;
 }
 
 List<TimelineSection> buildTimelineSections({
@@ -442,14 +489,27 @@ List<TimelineSection> buildTimelineSections({
   );
   final zone = schedule.localTimeZone;
   final markers = <TimelineMarker>[];
+  final overlaps = pairOverlappingSleep(events);
+  final paired = overlappedEventIds(overlaps);
 
   for (final event in events) {
+    if (paired.contains(event.id)) continue;
     final start = event.startUtc.toUtc();
     markers.add(
       EventMarker(
         event: event,
         dimmed: _eventDimmed(event, nowUtc),
         dayKey: dayKey(start, zone),
+      ),
+    );
+  }
+  for (final overlap in overlaps) {
+    final stamp = _overlapStamp(overlap);
+    markers.add(
+      SleepOverlapMarker(
+        overlap: overlap,
+        dimmed: !_overlapEnd(overlap).isAfter(nowUtc),
+        dayKey: dayKey(stamp, zone),
       ),
     );
   }

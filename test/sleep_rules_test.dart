@@ -79,7 +79,7 @@ void main() {
     }
   });
 
-  test('local adapt joins a pre-departure overlap when the gap is under 90 minutes', () {
+  test('local adapt skips a pre-departure sleep when pickup is daytime', () {
     const settings = UserSettings.defaults;
     final schedule = _sample();
     final wake = _preDepartureWake(schedule, settings);
@@ -87,51 +87,52 @@ void main() {
       schedule.staUtc,
       _events(schedule, lifestyle: JetlagLifestyle.localAdapt),
     );
-    final joined = sleeps.where((event) => event.endUtc == wake);
 
-    expect(joined, hasLength(1));
-    expect(joined.single.startUtc, DateTime.utc(2026, 12, 1, 10, 25));
+    // Pickup is 10:35 SFO, outside the local 23:00–07:00 night.
+    expect(sleeps.where((event) => event.endUtc == wake), isEmpty);
+    expect(sleeps.where((event) => event.detail.contains('출발 전')), isEmpty);
+    expect(sleeps, hasLength(2));
     expect(
-      joined.single.endUtc!.difference(joined.single.startUtc),
-      const Duration(hours: 6),
-    );
-    expect(
-      sleeps.where((event) {
-        final end = event.endUtc;
-        if (end == null || end == wake) return false;
-        final gap = joined.single.startUtc.difference(end);
-        return !gap.isNegative && gap < const Duration(minutes: 90);
-      }),
-      isEmpty,
+      sleeps.where(
+        (event) =>
+            event.startUtc.toUtc().isAtSameMomentAs(
+              DateTime.utc(2026, 12, 1, 7),
+            ) &&
+            event.endUtc!.toUtc().isAtSameMomentAs(
+              DateTime.utc(2026, 12, 1, 15),
+            ),
+      ),
+      hasLength(1),
     );
   });
 
-  test(
-    'local adapt keeps a night that ends 90 minutes or more before departure',
-    () {
-      final schedule = _sample();
-      final wake = _preDepartureWake(schedule, UserSettings.defaults);
-      final sleeps = _sleepsAfter(
-        schedule.staUtc,
-        _events(schedule, lifestyle: JetlagLifestyle.localAdapt),
-      );
-      final departure = sleeps.singleWhere((event) => event.endUtc == wake);
-      final earlier = sleeps.where(
-        (event) => event.endUtc != null && event.endUtc != wake,
-      );
+  test('a daytime pickup leaves only the mode sleep', () {
+    final schedule = _gapSchedule(
+      zonedUtc(
+        iana: 'Asia/Seoul',
+        year: 2026,
+        month: 11,
+        day: 30,
+        hour: 18,
+        minute: 45,
+      ),
+    );
+    final later = _events(schedule, settings: _gapSettings(1));
+    final onTime = _events(schedule, settings: _gapSettings(0));
+    final laterSleeps = _sleepsAfter(schedule.staUtc, later);
+    final onTimeSleeps = _sleepsAfter(schedule.staUtc, onTime);
 
-      expect(earlier, isNotEmpty);
-      for (final sleep in earlier) {
-        expect(
-          departure.startUtc.difference(sleep.endUtc!),
-          greaterThanOrEqualTo(const Duration(minutes: 90)),
-        );
-      }
-    },
-  );
+    // 18:45 KST is outside 23:00–04:00, so no pre-departure sleep is added.
+    expect(laterSleeps, hasLength(1));
+    expect(laterSleeps.single.endUtc, DateTime.utc(2026, 11, 30, 19, 1));
+    expect(onTimeSleeps, hasLength(1));
+    expect(onTimeSleeps.single.endUtc, DateTime.utc(2026, 11, 30, 19));
+    expect(laterSleeps.where((event) => event.detail.contains('출발')), isEmpty);
+    expect(onTimeSleeps.where((event) => event.detail.contains('출발')), isEmpty);
+  });
 
   test('a 2 hour 59 minute gap merges into the later wake', () {
-    final schedule = _gapSchedule();
+    final schedule = _nightGapSchedule();
     final events = _events(schedule, settings: _gapSettings(1));
     final sleeps = _sleepsAfter(schedule.staUtc, events);
 
@@ -145,7 +146,7 @@ void main() {
   });
 
   test('a 3 hour gap stays two sleeps with a meal between them', () {
-    final schedule = _gapSchedule();
+    final schedule = _nightGapSchedule();
     final events = _events(schedule, settings: _gapSettings(0));
     final sleeps = _sleepsAfter(schedule.staUtc, events);
 
@@ -287,6 +288,44 @@ void main() {
     expect(settings.arrivalToSleep, const Duration(hours: 2, minutes: 45));
   });
 
+  test('a 02:45 KST pickup adds a pre-departure sleep and 18:45 does not', () {
+    const detail = '출발 전 픽업에 맞춰 잡은 수면입니다';
+    final night = _sample().copyWith(
+      pickupUtc: zonedUtc(
+        iana: 'Asia/Seoul',
+        year: 2026,
+        month: 12,
+        day: 2,
+        hour: 2,
+        minute: 45,
+      ),
+    );
+    final day = _sample().copyWith(
+      pickupUtc: zonedUtc(
+        iana: 'Asia/Seoul',
+        year: 2026,
+        month: 12,
+        day: 1,
+        hour: 18,
+        minute: 45,
+      ),
+    );
+
+    final nightSleeps = _sleepsAfter(night.staUtc, _events(night));
+    final daySleeps = _sleepsAfter(day.staUtc, _events(day));
+
+    expect(
+      nightSleeps.where((event) => event.detail.contains(detail)),
+      isNotEmpty,
+    );
+    expect(daySleeps.where((event) => event.detail.contains(detail)), isEmpty);
+    expect(daySleeps, isNotEmpty);
+    expect(
+      daySleeps.map((event) => event.detail).join('\n').contains('출발 시각'),
+      isFalse,
+    );
+  });
+
   test('December 1 has a sleep that ends at the pre-departure wake', () {
     const settings = UserSettings.defaults;
     final schedule = _sample();
@@ -311,16 +350,33 @@ void main() {
   });
 }
 
-/// Two blocks around a chosen gap. Wake 04:00 leaves 3 hours before the
-/// pre-departure sleep. Wake 04:01 leaves 2 hours 59 minutes.
-JetlagScheduleSnapshot _gapSchedule() {
+/// Both clocks are Seoul. Wake 04:00 ends the mode night at 19:00Z.
+/// Wake 04:01 ends it one minute later.
+JetlagScheduleSnapshot _gapSchedule(DateTime? pickupUtc) {
   return JetlagScheduleSnapshot(
     stationLabel: 'SFO',
     localTimeZone: 'Asia/Seoul',
     referenceTimeZone: 'Asia/Seoul',
     staUtc: DateTime.utc(2026, 11, 30, 8),
     stdUtc: DateTime.utc(2026, 12, 1, 4, 20),
+    pickupUtc: pickupUtc,
     flightNumber: 'XX000',
+  );
+}
+
+/// 02:45 KST is inside 23:00–04:00, so a pre-departure sleep is built.
+/// That pickup is before arrival, so its own wake cannot start after
+/// arrival and the block still ends at departure − show-up − prep − commute.
+JetlagScheduleSnapshot _nightGapSchedule() {
+  return _gapSchedule(
+    zonedUtc(
+      iana: 'Asia/Seoul',
+      year: 2026,
+      month: 11,
+      day: 30,
+      hour: 2,
+      minute: 45,
+    ),
   );
 }
 

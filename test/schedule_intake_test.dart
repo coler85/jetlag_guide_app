@@ -413,7 +413,9 @@ void main() {
     expect(prefs.getString(FlightScheduleStore.preferenceKey), isNull);
   });
 
-  testWidgets('file recognition opens manual entry', (tester) async {
+  testWidgets('the upload card stays hidden while manual entry remains', (
+    tester,
+  ) async {
     final controller = _guide();
     addTearDown(controller.dispose);
     final roster = KeRosterGateway(
@@ -430,29 +432,24 @@ void main() {
             roster: roster,
             onSchedule: (_) {},
             parser: const ScheduleParserService(),
-            files: ScheduleFilePicker(
-              readImage: () async => const ScheduleFileRef(
-                name: 'roster.png',
-                kind: ScheduleFileKind.image,
-              ),
-            ),
+            files: const ScheduleFilePicker(),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('schedule-action-file')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('schedule-source-image')));
-    await _until(tester, find.byKey(const ValueKey('manual-schedule-form')));
-
+    expect(kShowScheduleUpload, isFalse);
+    expect(find.byKey(const ValueKey('schedule-action-file')), findsNothing);
+    expect(find.text('스케줄 이미지/PDF 업로드'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('schedule-action-manual')),
+      findsOneWidget,
+    );
     expect(
       ScheduleScreen.recognitionPending,
       '아직 파일 자동 인식은 준비 중입니다. 직접 입력으로 넣어 주세요.',
     );
-    expect(find.text(ScheduleScreen.recognitionPending), findsOneWidget);
-    expect(find.byKey(const ValueKey('manual-schedule-form')), findsOneWidget);
   });
 
   testWidgets('the schedule header opens the card for now and swipes', (
@@ -810,11 +807,4 @@ Future<void> _enterAnonymous(WidgetTester tester) async {
   );
   await tester.tap(find.byKey(const ValueKey('manual-save')));
   await tester.pumpAndSettle();
-}
-
-Future<void> _until(WidgetTester tester, Finder finder) async {
-  for (var i = 0; i < 20; i++) {
-    if (finder.evaluate().isNotEmpty) return;
-    await tester.pump(const Duration(milliseconds: 50));
-  }
 }

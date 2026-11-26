@@ -14,6 +14,10 @@ import '../widgets/manual_schedule_form.dart';
 import '../widgets/pickup_lead_line.dart';
 import '../widgets/schedule_action_card.dart';
 
+/// Hides the image/PDF upload card until file recognition is ready.
+/// The picker and parser stay wired for when this is turned back on.
+const kShowScheduleUpload = false;
+
 enum _ScheduleSource { image, document }
 
 /// Tab that turns a file, a roster link, or a typed layover into a guide.
@@ -90,14 +94,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     style: JetlagTheme.caption,
                   ),
                   const SizedBox(height: 18),
-                  ScheduleActionCard(
-                    key: const ValueKey('schedule-action-file'),
-                    emoji: '📄',
-                    title: '스케줄 이미지/PDF 업로드',
-                    subtitle: '자동 분석',
-                    accent: JetlagTheme.duty,
-                    onTap: _pickFile,
-                  ),
+                  if (kShowScheduleUpload)
+                    ScheduleActionCard(
+                      key: const ValueKey('schedule-action-file'),
+                      emoji: '📄',
+                      title: '스케줄 이미지/PDF 업로드',
+                      subtitle: '자동 분석',
+                      accent: JetlagTheme.duty,
+                      onTap: _pickFile,
+                    ),
                   if (kShowRosterImport)
                     ScheduleActionCard(
                       key: const ValueKey('schedule-action-roster'),

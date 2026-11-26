@@ -17,6 +17,7 @@ import 'package:jetlag_guide_app/models/sleep_log.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
 import 'package:jetlag_guide_app/sample_schedule.dart';
 import 'package:jetlag_guide_app/screens/jetlag_guide_shell.dart';
+import 'package:jetlag_guide_app/screens/schedule_screen.dart';
 import 'package:jetlag_guide_app/state/jetlag_guide_controller.dart';
 import 'package:jetlag_guide_app/state/sleep_log_store.dart';
 import 'package:jetlag_guide_app/theme/jetlag_theme.dart';
@@ -72,7 +73,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('jetlag-schedule-page')), findsOneWidget);
-    expect(find.byKey(const ValueKey('schedule-action-file')), findsOneWidget);
+    expect(kShowScheduleUpload, isFalse);
+    expect(find.byKey(const ValueKey('schedule-action-file')), findsNothing);
     expect(find.byKey(const ValueKey('schedule-action-roster')), findsNothing);
     expect(
       find.byKey(const ValueKey('schedule-action-manual')),
@@ -274,10 +276,13 @@ void main() {
     final clock = tester.getRect(
       find.byKey(const ValueKey('jetlag-clock-bar')),
     );
+    final caffeine = tester.getRect(find.byKey(const ValueKey('log-caffeine')));
     final scroll = tester.getRect(
       find.byKey(const ValueKey('jetlag-timeline')),
     );
     expect(clock.top, greaterThanOrEqualTo(scroll.top));
+    expect(caffeine.bottom, lessThanOrEqualTo(clock.top));
+    expect(clock.height, 24);
     expect(find.byKey(const ValueKey('jetlag-sleep-debt')), findsOneWidget);
     expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
 
@@ -290,10 +295,14 @@ void main() {
     final pinnedClock = tester.getRect(
       find.byKey(const ValueKey('jetlag-clock-bar')),
     );
+    final pinnedCaffeine = tester.getRect(
+      find.byKey(const ValueKey('log-caffeine')),
+    );
     final pinnedScroll = tester.getRect(
       find.byKey(const ValueKey('jetlag-timeline')),
     );
-    expect(pinnedClock.top, closeTo(pinnedScroll.top, 12));
+    expect(pinnedCaffeine.top, closeTo(pinnedScroll.top, 16));
+    expect(pinnedClock.top, greaterThanOrEqualTo(pinnedCaffeine.bottom));
     expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
     expect(
       tester
@@ -457,7 +466,7 @@ void main() {
     expect(find.text('수면 기록 없음'), findsNothing);
     await _scrollToLoggedSleep(tester);
     _expectLoggedSleepBlock(tester);
-    expect(find.text('03:15 - 08:45 (LAX)'), findsOneWidget);
+    expect(find.text('기록 03:15–08:45'), findsOneWidget);
   });
 
   testWidgets('23:30 to 06:30 is overnight and save stays above the bars', (
@@ -650,8 +659,8 @@ void main() {
     expect(find.text('-1시간 30분'), findsOneWidget);
     final id = controller.sleepLogs.single.id;
 
-    await _revealTimelineItem(tester, find.text('기록한 수면'));
-    await tester.tap(find.text('기록한 수면'));
+    await _revealTimelineItem(tester, find.text('기록 03:15–08:45'));
+    await tester.tap(find.text('기록 03:15–08:45'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('sleep-log-delete')), findsOneWidget);
     expect(find.text('6월 4일 03:15 - 08:45'), findsOneWidget);
@@ -674,8 +683,8 @@ void main() {
     expect(find.text('0분'), findsOneWidget);
     expect(find.text('-1시간 30분'), findsNothing);
 
-    await _revealTimelineItem(tester, find.text('기록한 수면'));
-    await tester.tap(find.text('기록한 수면'));
+    await _revealTimelineItem(tester, find.text('기록 03:15–10:45'));
+    await tester.tap(find.text('기록 03:15–10:45'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('sleep-log-delete')));
     await tester.pumpAndSettle();
@@ -748,10 +757,34 @@ Future<void> _revealTimelineItem(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> _scrollToLoggedSleep(WidgetTester tester) {
-  return _scrollTimeline(tester, find.text('기록한 수면'));
+  return _scrollTimeline(tester, _loggedSleepLine());
+}
+
+Finder _loggedSleepLine() {
+  return find.byWidgetPredicate((widget) {
+    final data = widget is Text ? widget.data : null;
+    if (data == null) return false;
+    return data == '기록한 수면' || data.startsWith('기록 ');
+  });
 }
 
 void _expectLoggedSleepBlock(WidgetTester tester) {
+  final overlap = find.byKey(const ValueKey('sleep-overlap-card'));
+  if (overlap.evaluate().isNotEmpty) {
+    final log = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('sleep-overlap-log')),
+        matching: find.byType(Text),
+      ),
+    );
+    final plan = tester.widget<Text>(
+      find.byKey(const ValueKey('sleep-overlap-plan')),
+    );
+    expect(log.style?.color, JetlagTheme.loggedSleep);
+    expect(plan.style?.color, JetlagTheme.sleep);
+    expect(log.style?.color, isNot(plan.style?.color));
+    return;
+  }
   final card = find.ancestor(
     of: find.text('기록한 수면'),
     matching: find.byType(GuideEventCard),

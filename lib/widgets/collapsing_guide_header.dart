@@ -8,9 +8,9 @@ import 'lifestyle_switcher.dart';
 import 'quick_log_bar.dart';
 import 'status_dashboard.dart';
 
-/// Pinned timeline header. Expanded it shows the clock, lifestyle switch,
-/// sleep-debt chip, status cards, and quick log. Collapsed it keeps the
-/// clock and the quick log.
+/// Pinned timeline header. Expanded it shows the lifestyle switch,
+/// sleep-debt chip, status cards, quick log, then the clock. Collapsed it
+/// keeps the quick log and the clock.
 class CollapsingGuideHeader extends StatelessWidget {
   const CollapsingGuideHeader({
     super.key,
@@ -118,12 +118,6 @@ class _GuideHeaderDelegate extends SliverPersistentHeaderDelegate {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Column(
             children: [
-              CockpitClockBar(
-                clock: clock,
-                localIana: localIana,
-                homeIana: homeIana,
-                stationLabel: stationLabel,
-              ),
               ClipRect(
                 child: Align(
                   alignment: Alignment.topCenter,
@@ -131,7 +125,7 @@ class _GuideHeaderDelegate extends SliverPersistentHeaderDelegate {
                   child: Opacity(
                     opacity: opened,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.only(bottom: 12),
                       child: Column(
                         children: [
                           LifestyleSwitcher(
@@ -141,18 +135,23 @@ class _GuideHeaderDelegate extends SliverPersistentHeaderDelegate {
                           ),
                           const SizedBox(height: 12),
                           StatusDashboard(data: dashboard),
-                          const SizedBox(height: 12),
                         ],
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
               QuickLogBar(
                 onCaffeine: onCaffeine,
                 onMeal: onMeal,
                 onSleep: onSleep,
+              ),
+              const SizedBox(height: 8),
+              CockpitClockBar(
+                clock: clock,
+                localIana: localIana,
+                homeIana: homeIana,
+                stationLabel: stationLabel,
               ),
             ],
           ),

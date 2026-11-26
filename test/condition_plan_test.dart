@@ -76,7 +76,8 @@ void main() {
     );
     final early = timeline.events.where(
       (event) =>
-          event.kind == GuideEventKind.sleep && event.detail.contains('미리'),
+          event.kind == GuideEventKind.sleep &&
+          event.detail.contains('출발 전 픽업'),
     );
     expect(early.single.startUtc, DateTime.utc(2026, 6, 4, 11, 15));
     expect(early.single.endUtc, DateTime.utc(2026, 6, 4, 18, 15));
@@ -360,7 +361,7 @@ JetLagTimeline _targeted(
 Duration _earlyLength(JetLagTimeline timeline) {
   final early = timeline.events.singleWhere(
     (event) =>
-        event.kind == GuideEventKind.sleep && event.detail.contains('미리'),
+        event.kind == GuideEventKind.sleep && event.detail.contains('출발 전 픽업'),
   );
   return early.endUtc!.difference(early.startUtc);
 }
@@ -368,7 +369,9 @@ Duration _earlyLength(JetLagTimeline timeline) {
 String _homeBed(JetLagTimeline timeline) {
   final sleep = timeline.events.firstWhere(
     (event) =>
-        event.kind == GuideEventKind.sleep && !event.detail.contains('미리'),
+        event.kind == GuideEventKind.sleep &&
+        !event.detail.contains('출발 전') &&
+        !event.detail.contains('출발 시각'),
   );
   return formatHm(sleep.startUtc, 'Asia/Seoul');
 }

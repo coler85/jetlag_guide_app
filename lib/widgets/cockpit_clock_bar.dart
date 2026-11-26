@@ -55,7 +55,7 @@ class _CockpitClockBarState extends State<CockpitClockBar> {
     );
     return SizedBox(
       key: const ValueKey('jetlag-clock-bar'),
-      height: 32,
+      height: 24,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: JetlagTheme.elevated,
@@ -72,7 +72,7 @@ class _CockpitClockBarState extends State<CockpitClockBar> {
               maxLines: 1,
               style: const TextStyle(
                 color: JetlagTheme.textPrimary,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 fontFeatures: JetlagTheme.tabular,
                 letterSpacing: 0.2,

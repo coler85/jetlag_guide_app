@@ -51,7 +51,8 @@ class GuideRulesScreen extends StatelessWidget {
         title: '출발 전 수면',
         body:
             '픽업이 있으면 픽업에서, 없으면 출발에서 준비($prep)와 이동($commute)을 '
-            '빼서 기상 시각을 정합니다. 수면 목표($target) 안에서 $cycle 단위로 채웁니다.',
+            '빼서 기상 시각을 정합니다. 수면 목표($target) 안에서 $cycle 단위로 채웁니다. '
+            '픽업이 밤·새벽일 때만 잡아요.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-gap'),

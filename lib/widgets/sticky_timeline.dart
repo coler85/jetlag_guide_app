@@ -11,6 +11,7 @@ import 'bunk_selection_card.dart';
 import 'guide_event_card.dart';
 import 'inline_log_chip.dart';
 import 'now_line.dart';
+import 'sleep_overlap_card.dart';
 
 class StickyTimeline extends StatelessWidget {
   const StickyTimeline({
@@ -78,6 +79,12 @@ class StickyTimeline extends StatelessWidget {
   Widget _row(TimelineMarker marker) {
     final child = switch (marker) {
       EventMarker event => _eventCard(event),
+      SleepOverlapMarker overlap => SleepOverlapCard(
+        plan: overlap.overlap.plan,
+        logs: overlap.overlap.logs,
+        iana: schedule.localTimeZone,
+        onEditLoggedSleep: onEditLoggedSleep,
+      ),
       LogMarker log => InlineLogChip(
         log: log.log,
         clock: formatHm(log.log.atUtc, schedule.localTimeZone),
@@ -93,6 +100,7 @@ class StickyTimeline extends StatelessWidget {
     };
     final dimmed = switch (marker) {
       EventMarker event => event.dimmed,
+      SleepOverlapMarker overlap => overlap.dimmed,
       LogMarker log => log.dimmed,
       _ => false,
     };
