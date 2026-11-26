@@ -10,6 +10,7 @@ class UserSettingsStore {
   static const wakeKey = 'jetlag_guide_default_wake_minute';
   static const prepKey = 'jetlag_guide_prep_minutes';
   static const commuteKey = 'jetlag_guide_commute_minutes';
+  static const arrivalToSleepKey = 'jetlag_guide_arrival_to_sleep_minutes';
   static const hybridKey = 'jetlag_guide_hybrid_max_shift_hours';
   static const homeShowupLeadKey = 'jetlag_guide_home_showup_lead_minutes';
   static const sleepTargetKey = 'jetlag_guide_sleep_target_minutes';
@@ -28,6 +29,11 @@ class UserSettingsStore {
       ),
       commuteTime: Duration(
         minutes: prefs.getInt(commuteKey) ?? defaults.commuteTime.inMinutes,
+      ),
+      arrivalToSleep: Duration(
+        minutes:
+            prefs.getInt(arrivalToSleepKey) ??
+            defaults.arrivalToSleep.inMinutes,
       ),
       hybridMaxShiftHours:
           prefs.getInt(hybridKey) ?? defaults.hybridMaxShiftHours,
@@ -49,6 +55,7 @@ class UserSettingsStore {
     await prefs.setInt(wakeKey, stored.defaultWakeTime.minuteOfDay);
     await prefs.setInt(prepKey, stored.prepTime.inMinutes);
     await prefs.setInt(commuteKey, stored.commuteTime.inMinutes);
+    await prefs.setInt(arrivalToSleepKey, stored.arrivalToSleep.inMinutes);
     await prefs.setInt(hybridKey, stored.hybridMaxShiftHours);
     await prefs.setInt(homeShowupLeadKey, stored.homeShowupLead.inMinutes);
     await prefs.setInt(sleepTargetKey, stored.sleepTarget.inMinutes);

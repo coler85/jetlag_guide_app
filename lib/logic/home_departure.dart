@@ -1,6 +1,7 @@
 import '../models/jetlag_schedule.dart';
 import '../models/user_settings.dart';
 import 'jetlag_clock.dart';
+import 'sleep_constants.dart';
 
 /// What to do with the night before a report time that lands inside the
 /// crew's usual sleep.
@@ -79,6 +80,30 @@ class HomeDepartureAdvisor {
       recommendedEndUtc: forcedWake,
       shortfall: shortfall,
     );
+  }
+
+  /// Wake for the last sleep before departure.
+  ///
+  /// [clockFallsInSleep] does not apply. A pickup is the anchor only when one
+  /// 90-minute cycle can still start at or after arrival plus
+  /// [UserSettings.arrivalToSleep]. Otherwise the anchor is
+  /// departure − show-up lead − prep − commute.
+  DateTime? preDepartureWake({
+    required JetlagScheduleSnapshot schedule,
+    required UserSettings settings,
+  }) {
+    final sta = schedule.staUtc.toUtc();
+    final std = schedule.stdUtc.toUtc();
+    if (!std.isAfter(sta)) return null;
+    final lead = settings.prepTime + settings.commuteTime;
+    final floor = sta.add(settings.arrivalToSleep);
+    final pickup = schedule.pickupUtc?.toUtc();
+    if (pickup != null) {
+      final fromPickup = pickup.subtract(lead);
+      final oneCycleStart = fromPickup.subtract(kSleepCycle);
+      if (!oneCycleStart.isBefore(floor)) return fromPickup;
+    }
+    return std.subtract(settings.homeShowupLead).subtract(lead);
   }
 
   /// Earlier of the pickup and show-up clocks that sit inside the usual night.

@@ -61,6 +61,26 @@ class UserSettingsForm extends StatelessWidget {
           ),
         ),
         _DurationRow(
+          rowKey: const ValueKey('settings-arrival-to-sleep'),
+          label: '도착 후 잠들기까지',
+          minutes: settings.arrivalToSleep.inMinutes,
+          minMinutes: UserSettings.minArrivalToSleep.inMinutes,
+          maxMinutes: UserSettings.maxArrivalToSleep.inMinutes,
+          valueLabel: _hoursMinutesLabel(settings.arrivalToSleep),
+          valueWidth: 96,
+          onChanged: (minutes) => onChanged(
+            settings.copyWith(arrivalToSleep: Duration(minutes: minutes)),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 4),
+          child: Text(
+            '하기, 입국, 호텔 이동, 짐 정리와 잘 준비까지 걸리는 시간',
+            key: ValueKey('settings-arrival-to-sleep-help'),
+            style: JetlagTheme.caption,
+          ),
+        ),
+        _DurationRow(
           rowKey: const ValueKey('settings-home-showup'),
           label: '홈베이스 쇼업 (출발 ${settings.homeShowupLead.inMinutes}분 전)',
           minutes: settings.homeShowupLead.inMinutes,
@@ -77,7 +97,7 @@ class UserSettingsForm extends StatelessWidget {
           minMinutes: UserSettings.minSleepTarget.inMinutes,
           maxMinutes: UserSettings.maxSleepTarget.inMinutes,
           stepMinutes: 30,
-          valueLabel: _sleepTargetLabel(settings.sleepTarget),
+          valueLabel: _hoursMinutesLabel(settings.sleepTarget),
           valueWidth: 96,
           onChanged: (minutes) => onChanged(
             settings.copyWith(chosenSleep: Duration(minutes: minutes)),
@@ -116,7 +136,7 @@ class UserSettingsForm extends StatelessWidget {
   }
 }
 
-String _sleepTargetLabel(Duration duration) {
+String _hoursMinutesLabel(Duration duration) {
   final minutes = duration.inMinutes;
   final hours = minutes ~/ 60;
   final mins = minutes % 60;

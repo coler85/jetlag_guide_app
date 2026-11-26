@@ -256,7 +256,7 @@ void main() {
     expect(find.textContaining('Z (UTC)'), findsOneWidget);
     expect(find.text('카페인'), findsWidgets);
     expect(find.text('커피'), findsNothing);
-    expect(find.text('카페인 컷오프'), findsOneWidget);
+    expect(find.text('다음 취침 계획'), findsOneWidget);
     expect(find.text('기상 계획'), findsNothing);
     expect(find.textContaining('6월 1일'), findsNothing);
     expect(find.byType(CustomScrollView), findsOneWidget);
@@ -416,6 +416,7 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 

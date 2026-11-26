@@ -11,6 +11,7 @@ import '../theme/jetlag_theme.dart';
 import '../widgets/inline_log_chip.dart';
 import '../widgets/timezone_picker.dart';
 import '../widgets/user_settings_form.dart';
+import 'guide_rules_screen.dart';
 
 class RecordsPage extends StatelessWidget {
   const RecordsPage({
@@ -148,6 +149,34 @@ class RecordsPage extends StatelessWidget {
           ],
         const SizedBox(height: 8),
         const Text(JetlagTheme.disclaimer, style: JetlagTheme.micro),
+        const SizedBox(height: 8),
+        ListTile(
+          key: const ValueKey('guide-rules-entry'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            GuideRulesScreen.entryLabel,
+            style: JetlagTheme.body,
+          ),
+          trailing: const Icon(
+            Icons.chevron_right,
+            color: JetlagTheme.textSecondary,
+          ),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    return GuideRulesScreen(
+                      settings: controller.settings,
+                      homeBaseTimezone: controller.homeBaseTimezone,
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }

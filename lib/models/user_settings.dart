@@ -35,6 +35,7 @@ class UserSettings {
     this.defaultWakeTime = const DayTime(hour: 7, minute: 0),
     this.prepTime = const Duration(minutes: 45),
     this.commuteTime = const Duration(minutes: 60),
+    this.arrivalToSleep = const Duration(hours: 2, minutes: 30),
     this.hybridMaxShiftHours = 3,
     this.homeShowupLead = const Duration(minutes: 95),
     this.chosenSleep = const Duration(hours: 7),
@@ -54,6 +55,11 @@ class UserSettings {
   /// Travel time from home (or the hotel) to the report point.
   final Duration commuteTime;
 
+  /// Time after arrival before the first sleep can start.
+  /// Covers leaving the aircraft, entry, the hotel ride, and getting ready
+  /// for bed. Clamped to 1–4 hours on 15-minute steps.
+  final Duration arrivalToSleep;
+
   /// Largest circadian move Hybrid mode will apply, in whole hours (1–6).
   final int hybridMaxShiftHours;
 
@@ -66,6 +72,8 @@ class UserSettings {
 
   static const minSleepTarget = Duration(hours: 4);
   static const maxSleepTarget = Duration(hours: 9);
+  static const minArrivalToSleep = Duration(hours: 1);
+  static const maxArrivalToSleep = Duration(hours: 4);
 
   /// Leave home this long before [showupUtc].
   DateTime departHomeUtc(DateTime showupUtc) {
@@ -102,12 +110,26 @@ class UserSettings {
     return Duration(minutes: snapped.toInt());
   }
 
+  /// Keeps the post-arrival delay inside 1–4 hours, on a 15-minute step.
+  static Duration clampArrivalToSleep(Duration value) {
+    final minutes = value.inMinutes.clamp(
+      minArrivalToSleep.inMinutes,
+      maxArrivalToSleep.inMinutes,
+    );
+    final snapped = ((minutes / 15).round() * 15).clamp(
+      minArrivalToSleep.inMinutes,
+      maxArrivalToSleep.inMinutes,
+    );
+    return Duration(minutes: snapped.toInt());
+  }
+
   UserSettings normalized() {
     return UserSettings(
       defaultBedTime: defaultBedTime.normalized(),
       defaultWakeTime: defaultWakeTime.normalized(),
       prepTime: Duration(minutes: prepTime.inMinutes.clamp(0, 180)),
       commuteTime: Duration(minutes: commuteTime.inMinutes.clamp(0, 240)),
+      arrivalToSleep: clampArrivalToSleep(arrivalToSleep),
       hybridMaxShiftHours: hybridMaxShiftHours.clamp(1, 6),
       homeShowupLead: Duration(minutes: homeShowupLead.inMinutes.clamp(0, 240)),
       chosenSleep: clampSleepTarget(chosenSleep),
@@ -119,6 +141,7 @@ class UserSettings {
     DayTime? defaultWakeTime,
     Duration? prepTime,
     Duration? commuteTime,
+    Duration? arrivalToSleep,
     int? hybridMaxShiftHours,
     Duration? homeShowupLead,
     Duration? chosenSleep,
@@ -128,6 +151,7 @@ class UserSettings {
       defaultWakeTime: defaultWakeTime ?? this.defaultWakeTime,
       prepTime: prepTime ?? this.prepTime,
       commuteTime: commuteTime ?? this.commuteTime,
+      arrivalToSleep: arrivalToSleep ?? this.arrivalToSleep,
       hybridMaxShiftHours: hybridMaxShiftHours ?? this.hybridMaxShiftHours,
       homeShowupLead: homeShowupLead ?? this.homeShowupLead,
       chosenSleep: chosenSleep ?? this.chosenSleep,
@@ -141,6 +165,7 @@ class UserSettings {
         other.defaultWakeTime == defaultWakeTime &&
         other.prepTime == prepTime &&
         other.commuteTime == commuteTime &&
+        other.arrivalToSleep == arrivalToSleep &&
         other.hybridMaxShiftHours == hybridMaxShiftHours &&
         other.homeShowupLead == homeShowupLead &&
         other.chosenSleep == chosenSleep;
@@ -152,6 +177,7 @@ class UserSettings {
     defaultWakeTime,
     prepTime,
     commuteTime,
+    arrivalToSleep,
     hybridMaxShiftHours,
     homeShowupLead,
     chosenSleep,

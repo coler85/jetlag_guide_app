@@ -1,0 +1,136 @@
+import 'package:flutter/material.dart';
+
+import '../logic/home_base_timezone.dart';
+import '../logic/sleep_constants.dart';
+import '../models/user_settings.dart';
+import '../theme/jetlag_theme.dart';
+
+/// Explains how the guide builds its plan from the crew's own settings.
+class GuideRulesScreen extends StatelessWidget {
+  const GuideRulesScreen({
+    super.key,
+    required this.settings,
+    required this.homeBaseTimezone,
+  });
+
+  final UserSettings settings;
+  final String homeBaseTimezone;
+
+  static const entryLabel = '이 가이드는 어떻게 계산하나요';
+
+  @override
+  Widget build(BuildContext context) {
+    final home = _homeClockName(homeBaseTimezone);
+    final shift = settings.hybridMaxShiftHours;
+    final arrival = _durationLabel(settings.arrivalToSleep);
+    final prep = _durationLabel(settings.prepTime);
+    final commute = _durationLabel(settings.commuteTime);
+    final target = _durationLabel(settings.sleepTarget);
+    final cycle = _durationLabel(kSleepCycle);
+    final gap = _durationLabel(kSleepMergeGap);
+
+    final sections = <_RuleSection>[
+      _RuleSection(
+        key: const ValueKey('guide-rules-modes'),
+        title: '세 가지 모드',
+        body:
+            '$home 유지는 홈 시간에 맞춰 잠을 둡니다. '
+            '하이브리드는 홈 시간에서 최대 $shift시간까지 현지 쪽으로 옮깁니다. '
+            '현지 적응은 현지 시간에 맞춥니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-arrival'),
+        title: '도착 후 첫 수면',
+        body:
+            '착륙 후 도착 후 잠들기까지($arrival)가 지난 뒤부터 '
+            '모드 기상 시각까지 잠을 둡니다. '
+            '$cycle이 안 되면 다음 취침으로 넘깁니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-departure'),
+        title: '출발 전 수면',
+        body:
+            '픽업이 있으면 픽업에서, 없으면 출발에서 준비($prep)와 이동($commute)을 '
+            '빼서 기상 시각을 정합니다. 수면 목표($target) 안에서 $cycle 단위로 채웁니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-gap'),
+        title: '수면 간격',
+        body: '두 수면 사이가 $gap 미만이면 하나로 합칩니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-meal-light'),
+        title: '식사와 빛',
+        body: '식사는 잠들기 1~2시간 전까지 끝나게 두고, 빛 쬐기는 일어난 뒤에만 둡니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-debt'),
+        title: '수면 부채',
+        body: '기록한 수면만 수면 목표($target)와 비교합니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-notice'),
+        title: '안내',
+        body:
+            '이 안내는 참고용 생활 가이드이며 의학적 조언을 대신하지 않습니다. '
+            '모든 데이터는 기기 안에만 저장되고 서버로 보내지 않습니다.',
+      ),
+    ];
+
+    return Scaffold(
+      key: const ValueKey('guide-rules-screen'),
+      backgroundColor: JetlagTheme.bg,
+      appBar: AppBar(title: const Text(entryLabel)),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        children: [
+          const Text('계획을 이렇게 계산해요', style: JetlagTheme.caption),
+          const SizedBox(height: 16),
+          for (var index = 0; index < sections.length; index++) ...[
+            if (index > 0) const SizedBox(height: 16),
+            sections[index],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RuleSection extends StatelessWidget {
+  const _RuleSection({super.key, required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: JetlagTheme.title),
+        const SizedBox(height: 6),
+        Text(body, style: JetlagTheme.body),
+      ],
+    );
+  }
+}
+
+/// "한국시간" only when the saved home base is Seoul. Other bases use their
+/// city name, or the IANA id when the city is not in the catalog.
+String _homeClockName(String iana) {
+  final id = resolveHomeBaseTimezone(iana);
+  if (id == kJetlagFallbackHomeBase) return '한국시간';
+  for (final zone in kHomeBaseZones) {
+    if (zone.id == id) return '${zone.city} 시간';
+  }
+  return id;
+}
+
+String _durationLabel(Duration duration) {
+  final minutes = duration.inMinutes;
+  final hours = minutes ~/ 60;
+  final mins = minutes % 60;
+  if (hours == 0) return '$mins분';
+  if (mins == 0) return '$hours시간';
+  return '$hours시간 $mins분';
+}
