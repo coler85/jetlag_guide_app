@@ -16,6 +16,7 @@ class JetlagTheme {
   static const textTertiary = Color(0xFF5F6368);
   static const duty = Color(0xFF4A90E2);
   static const sleep = Color(0xFF8A7CFF);
+  static const loggedSleep = Color(0xFF2EC4B6);
   static const caffeine = Color(0xFFF5A623);
   static const meal = Color(0xFF50E3C2);
   static const light = Color(0xFFFFD043);
@@ -210,6 +211,8 @@ class JetlagTheme {
         return caffeine;
       case GuideEventKind.sleep:
         return sleep;
+      case GuideEventKind.loggedSleep:
+        return loggedSleep;
       case GuideEventKind.light:
         return light;
       case GuideEventKind.arrival:
@@ -228,6 +231,8 @@ class JetlagTheme {
         return Icons.local_cafe;
       case GuideEventKind.sleep:
         return Icons.bed;
+      case GuideEventKind.loggedSleep:
+        return Icons.nights_stay;
       case GuideEventKind.light:
         return Icons.wb_sunny_outlined;
       case GuideEventKind.arrival:

@@ -213,7 +213,7 @@ List<GuideEvent> buildGuideEvents(
     events.add(
       GuideEvent(
         id: 'logged-sleep-${log.id}',
-        kind: GuideEventKind.sleep,
+        kind: GuideEventKind.loggedSleep,
         startUtc: log.startUtc,
         endUtc: log.endUtc,
         title: '기록한 수면',

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../logic/jetlag_clock.dart';
-import '../logic/layover_pickup.dart';
 import '../models/flight_leg.dart';
 import '../models/flight_schedule_input.dart';
 import '../models/jetlag_schedule.dart';
@@ -12,8 +11,8 @@ import '../services/schedule_report_mail.dart';
 import '../state/jetlag_guide_controller.dart';
 import '../theme/jetlag_theme.dart';
 import '../widgets/manual_schedule_form.dart';
+import '../widgets/pickup_lead_line.dart';
 import '../widgets/schedule_action_card.dart';
-import '../widgets/wheel_time_picker.dart';
 
 enum _ScheduleSource { image, document }
 
@@ -292,18 +291,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _editPickup() async {
     final schedule = widget.controller.schedule;
     final anchor = (schedule.pickupUtc ?? schedule.stdUtc).toUtc();
-    final wall = wallClock(anchor, schedule.localTimeZone);
-    final picked = await showWheelTimePicker(
+    final next = await showPickupTimeSheet(
       context: context,
-      initial: TimeOfDay(hour: wall.hour, minute: wall.minute),
-    );
-    if (picked == null) return;
-    final next = atWallTime(
-      dayAnchorUtc: anchor,
+      pickupUtc: anchor,
+      departureUtc: schedule.stdUtc,
       iana: schedule.localTimeZone,
-      hour: picked.hour,
-      minute: picked.minute,
     );
+    if (next == null || !mounted) return;
     await widget.controller.setPickup(next);
   }
 
@@ -511,7 +505,7 @@ List<_HeaderCard> _headerCards(
   if (roundTrip) {
     return [
       _flightCard('가는 편', out),
-      _layoverCard(out, back, journey!),
+      _layoverCard(out, back),
       _flightCard('오는 편', back),
     ];
   }
@@ -552,22 +546,14 @@ _HeaderCard _flightCard(String kicker, FlightLeg leg) {
   );
 }
 
-_HeaderCard _layoverCard(
-  FlightLeg outbound,
-  FlightLeg returning,
-  FlightScheduleInput journey,
-) {
+_HeaderCard _layoverCard(FlightLeg outbound, FlightLeg returning) {
   final zone = outbound.destinationTimeZone;
-  final pickup = journey.layoverPickupUtc;
   return _HeaderCard(
     kicker: '레이오버',
     route: [outbound.destination],
     lines: [
       '도착 ${_localClock(outbound.staUtc, zone)}',
       '출발 ${_localClock(returning.stdUtc, zone)}',
-      pickup == null
-          ? '픽업 미입력'
-          : '픽업 ${_pickupWithLead(pickup, returning.stdUtc, zone)}',
     ],
   );
 }
@@ -587,22 +573,6 @@ _HeaderCard _legacyCard(JetlagScheduleSnapshot schedule) {
           : '픽업 ${_placedClock(pickup, schedule.localTimeZone, schedule.referenceTimeZone, schedule.stationLabel)}',
     ],
   );
-}
-
-String _pickupWithLead(DateTime pickup, DateTime departure, String zone) {
-  final hm = _hm(pickup, zone);
-  final lead = pickupRelativeToDeparture(pickupLeadMinutes(departure, pickup));
-  return '$hm ($lead)';
-}
-
-String _hm(DateTime utc, String zone) {
-  final iana = zone.trim();
-  if (iana.isEmpty) return formatUtcHm(utc);
-  try {
-    return formatHm(utc, iana);
-  } catch (_) {
-    return formatUtcHm(utc);
-  }
 }
 
 String _localClock(DateTime utc, String zone) {

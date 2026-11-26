@@ -4,6 +4,7 @@ enum GuideEventKind {
   meal,
   caffeine,
   sleep,
+  loggedSleep,
   pickup,
   showup,
   departure,

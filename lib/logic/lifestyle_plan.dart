@@ -30,7 +30,9 @@ List<GuideEvent> lifestyleBlocks({
   if (!std.isAfter(sta)) return const [];
 
   final windows = _sleepWindows(schedule, lifestyle, settings);
-  final sleeps = windows.isEmpty ? [_fallbackSleep(schedule)] : windows;
+  final sleeps = windows.isEmpty
+      ? [_fallbackSleep(schedule, settings.sleepTarget)]
+      : windows;
   final blocks = <GuideEvent>[];
   for (final sleep in sleeps) {
     final caffeine = sleep.startUtc.subtract(const Duration(hours: 6));
@@ -203,13 +205,16 @@ DateTime _pulledWake(DateTime wakeUtc, DateTime? pickupUtc) {
   return ready.isBefore(wakeUtc) ? ready : wakeUtc;
 }
 
-_SleepWindow _fallbackSleep(JetlagScheduleSnapshot schedule) {
+_SleepWindow _fallbackSleep(JetlagScheduleSnapshot schedule, Duration target) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
   final pickup = schedule.pickupUtc?.toUtc();
   final anchor = pickup ?? std.subtract(const Duration(hours: 3));
-  var sleepStart = sta.add(const Duration(hours: 8));
-  var sleepEnd = sleepStart.add(const Duration(hours: 8));
+  final span = target > Duration.zero
+      ? target
+      : UserSettings.defaults.sleepTarget;
+  var sleepStart = sta.add(span);
+  var sleepEnd = sleepStart.add(span);
   final latestWake = anchor.subtract(const Duration(hours: 3));
   if (sleepEnd.isAfter(latestWake)) sleepEnd = latestWake;
   if (sleepEnd.difference(sleepStart) < const Duration(hours: 3)) {

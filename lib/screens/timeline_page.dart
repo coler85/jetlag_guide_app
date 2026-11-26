@@ -66,7 +66,7 @@ class TimelinePage extends StatelessWidget {
       final interval = await showSleepLogSheet(
         context: context,
         nowUtc: controller.now(),
-        usualSleep: controller.settings.usualSleep,
+        usualSleep: controller.settings.sleepTarget,
         iana: schedule.localTimeZone,
         zoneLabel: schedule.stationLabel,
       );

@@ -37,6 +37,7 @@ class UserSettings {
     this.commuteTime = const Duration(minutes: 60),
     this.hybridMaxShiftHours = 3,
     this.homeShowupLead = const Duration(minutes: 95),
+    this.chosenSleep = const Duration(hours: 7),
   });
 
   static const defaults = UserSettings();
@@ -60,6 +61,12 @@ class UserSettings {
   /// when a journey does not name its own show-up. Clamped to 0–240 minutes.
   final Duration homeShowupLead;
 
+  /// Stored length behind [sleepTarget]. Clamped to 4–9 hours on 30-minute steps.
+  final Duration chosenSleep;
+
+  static const minSleepTarget = Duration(hours: 4);
+  static const maxSleepTarget = Duration(hours: 9);
+
   /// Leave home this long before [showupUtc].
   DateTime departHomeUtc(DateTime showupUtc) {
     return showupUtc.toUtc().subtract(normalized().commuteTime);
@@ -78,6 +85,23 @@ class UserSettings {
     return Duration(minutes: minutes);
   }
 
+  /// Hours each saved sleep is compared with, and the planned block before
+  /// a pickup. This is the only sleep goal the guide reads.
+  Duration get sleepTarget => clampSleepTarget(chosenSleep);
+
+  /// Keeps a sleep goal inside 4–9 hours, on a 30-minute step.
+  static Duration clampSleepTarget(Duration value) {
+    final minutes = value.inMinutes.clamp(
+      minSleepTarget.inMinutes,
+      maxSleepTarget.inMinutes,
+    );
+    final snapped = ((minutes / 30).round() * 30).clamp(
+      minSleepTarget.inMinutes,
+      maxSleepTarget.inMinutes,
+    );
+    return Duration(minutes: snapped.toInt());
+  }
+
   UserSettings normalized() {
     return UserSettings(
       defaultBedTime: defaultBedTime.normalized(),
@@ -86,6 +110,7 @@ class UserSettings {
       commuteTime: Duration(minutes: commuteTime.inMinutes.clamp(0, 240)),
       hybridMaxShiftHours: hybridMaxShiftHours.clamp(1, 6),
       homeShowupLead: Duration(minutes: homeShowupLead.inMinutes.clamp(0, 240)),
+      chosenSleep: clampSleepTarget(chosenSleep),
     );
   }
 
@@ -96,6 +121,7 @@ class UserSettings {
     Duration? commuteTime,
     int? hybridMaxShiftHours,
     Duration? homeShowupLead,
+    Duration? chosenSleep,
   }) {
     return UserSettings(
       defaultBedTime: defaultBedTime ?? this.defaultBedTime,
@@ -104,6 +130,7 @@ class UserSettings {
       commuteTime: commuteTime ?? this.commuteTime,
       hybridMaxShiftHours: hybridMaxShiftHours ?? this.hybridMaxShiftHours,
       homeShowupLead: homeShowupLead ?? this.homeShowupLead,
+      chosenSleep: chosenSleep ?? this.chosenSleep,
     ).normalized();
   }
 
@@ -115,7 +142,8 @@ class UserSettings {
         other.prepTime == prepTime &&
         other.commuteTime == commuteTime &&
         other.hybridMaxShiftHours == hybridMaxShiftHours &&
-        other.homeShowupLead == homeShowupLead;
+        other.homeShowupLead == homeShowupLead &&
+        other.chosenSleep == chosenSleep;
   }
 
   @override
@@ -126,5 +154,6 @@ class UserSettings {
     commuteTime,
     hybridMaxShiftHours,
     homeShowupLead,
+    chosenSleep,
   );
 }

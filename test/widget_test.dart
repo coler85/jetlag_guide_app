@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jetlag_guide_app/logic/bunk_plan.dart';
@@ -12,8 +13,13 @@ import 'package:jetlag_guide_app/models/jetlag_schedule.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
 import 'package:jetlag_guide_app/sample_schedule.dart';
 import 'package:jetlag_guide_app/screens/jetlag_guide_shell.dart';
+import 'package:jetlag_guide_app/state/jetlag_guide_controller.dart';
 import 'package:jetlag_guide_app/theme/jetlag_theme.dart';
 import 'package:jetlag_guide_app/screens/timeline_page.dart';
+import 'package:jetlag_guide_app/widgets/sticky_timeline.dart';
+import 'package:jetlag_guide_app/widgets/guide_event_card.dart';
+import 'package:jetlag_guide_app/widgets/sleep_log_sheet.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -298,6 +304,63 @@ void main() {
     );
   });
 
+  testWidgets('scrolling three days leaves one pinned date header', (
+    tester,
+  ) async {
+    ensureJetlagTimeZones();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: StickyTimeline(
+            header: SliverPersistentHeader(
+              pinned: true,
+              delegate: _PinnedBarDelegate(),
+            ),
+            sections: [
+              _dateSection('11월 24일 (화) · LAX', DateTime.utc(2026, 11, 24)),
+              _dateSection('11월 25일 (수) · LAX', DateTime.utc(2026, 11, 25)),
+              _dateSection(
+                '11월 26일 (목) · LAX',
+                DateTime.utc(2026, 11, 26, 12),
+                lastTitle: '11월 26일 마지막',
+              ),
+            ],
+            schedule: _laxLayover(),
+            role: JetlagCrewRole.flightOps,
+            bunkShift: null,
+            onBunk: (_) {},
+            onDismissLog: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('timeline-date-header')), findsOneWidget);
+    expect(find.text('11월 24일 (화) · LAX'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('11월 26일 마지막'),
+      400,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('jetlag-timeline')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('timeline-date-header')), findsOneWidget);
+    expect(find.text('11월 26일 (목) · LAX'), findsOneWidget);
+    expect(find.text('11월 24일 (화) · LAX'), findsNothing);
+    expect(find.text('11월 25일 (수) · LAX'), findsNothing);
+    final bar = tester.getRect(find.byKey(const ValueKey('test-pinned-bar')));
+    final pinned = tester.getRect(
+      find.byKey(const ValueKey('timeline-date-header')),
+    );
+    expect(pinned.top, closeTo(bar.bottom, 4));
+  });
+
   testWidgets('sleep chip saves an interval and settings stay editable', (
     tester,
   ) async {
@@ -329,6 +392,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('sleep-log-sheet')), findsNothing);
     expect(find.text('0분'), findsOneWidget);
+    await _scrollToLoggedSleep(tester);
+    _expectLoggedSleepBlock(tester);
 
     await tester.tap(find.text('기록·설정'));
     await tester.pumpAndSettle();
@@ -363,6 +428,231 @@ void main() {
       isNot(JetlagTheme.debt),
     );
   });
+
+  testWidgets('one saved sleep shows its shortfall and a logged block', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: JetlagGuideShell(
+          schedule: _laxLayover(),
+          now: () => DateTime.utc(2026, 6, 4, 12),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final controller = tester
+        .element(find.byType(TimelinePage))
+        .read<JetlagGuideController>();
+    await controller.addSleepLog(
+      startUtc: DateTime.utc(2026, 6, 4, 10, 15),
+      endUtc: DateTime.utc(2026, 6, 4, 15, 45),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('-1시간 30분'), findsOneWidget);
+    expect(find.text('수면 기록 없음'), findsNothing);
+    await _scrollToLoggedSleep(tester);
+    _expectLoggedSleepBlock(tester);
+    expect(find.text('03:15 - 08:45 (LAX)'), findsOneWidget);
+  });
+
+  testWidgets('23:30 to 06:30 is overnight and save stays above the bars', (
+    tester,
+  ) async {
+    ensureJetlagTimeZones();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    addTearDown(tester.view.reset);
+
+    const now = '2026-06-04T12:00:00Z';
+    SleepInterval? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  saved = await showSleepLogSheet(
+                    context: context,
+                    nowUtc: DateTime.parse(now),
+                    usualSleep: const Duration(hours: 7),
+                    iana: 'America/Los_Angeles',
+                    zoneLabel: 'LAX',
+                  );
+                },
+                child: const Text('열기'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.text('열기'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CalendarDatePicker), findsNothing);
+    expect(find.text('22:00'), findsOneWidget);
+    expect(find.text('05:00'), findsOneWidget);
+    _expectSaveAbove(tester, reservedBottom: 48);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 160);
+    await tester.pump();
+    _expectSaveAbove(tester, reservedBottom: 160);
+    tester.view.resetViewInsets();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-start')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(CalendarDatePicker), findsNothing);
+    expect(find.byType(CupertinoDatePicker), findsOneWidget);
+    await _advanceWheel(tester, column: 0, steps: 1);
+    await _advanceWheel(tester, column: 1, steps: 30);
+    await tester.tap(find.text('완료'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-end')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(CalendarDatePicker), findsNothing);
+    await _advanceWheel(tester, column: 0, steps: 1);
+    await _advanceWheel(tester, column: 1, steps: 30);
+    await tester.tap(find.text('완료'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('6월 2일 23:30 - 6월 3일 06:30'), findsOneWidget);
+    _expectSaveAbove(tester, reservedBottom: 48);
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-save')));
+    await tester.pumpAndSettle();
+
+    final interval = saved;
+    expect(interval, isNotNull);
+    final bed = wallClock(interval!.startUtc, 'America/Los_Angeles');
+    final wake = wallClock(interval.endUtc, 'America/Los_Angeles');
+    expect(bed.year, 2026);
+    expect(bed.month, 6);
+    expect(bed.day, 2);
+    expect(bed.hour, 23);
+    expect(bed.minute, 30);
+    expect(wake.year, 2026);
+    expect(wake.month, 6);
+    expect(wake.day, 3);
+    expect(wake.hour, 6);
+    expect(wake.minute, 30);
+    expect(
+      DateTime.utc(
+        wake.year,
+        wake.month,
+        wake.day,
+      ).difference(DateTime.utc(bed.year, bed.month, bed.day)).inDays,
+      1,
+    );
+  });
+}
+
+void _expectSaveAbove(WidgetTester tester, {required double reservedBottom}) {
+  final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+  final save = tester.getRect(find.byKey(const ValueKey('sleep-log-save')));
+  expect(save.top, greaterThanOrEqualTo(0));
+  expect(save.bottom, lessThanOrEqualTo(height - reservedBottom));
+  expect(save.height, greaterThan(40));
+}
+
+Future<void> _advanceWheel(
+  WidgetTester tester, {
+  required int column,
+  required int steps,
+}) async {
+  final wheel = tester.widget<ListWheelScrollView>(
+    find.byType(ListWheelScrollView).at(column),
+  );
+  final controller = wheel.controller!;
+  controller.jumpTo(controller.offset + wheel.itemExtent * steps);
+  await tester.pump();
+}
+
+Future<void> _scrollToLoggedSleep(WidgetTester tester) {
+  return tester.scrollUntilVisible(
+    find.text('기록한 수면'),
+    400,
+    scrollable: find.descendant(
+      of: find.byKey(const ValueKey('jetlag-timeline')),
+      matching: find.byType(Scrollable),
+    ),
+  );
+}
+
+void _expectLoggedSleepBlock(WidgetTester tester) {
+  final card = find.ancestor(
+    of: find.text('기록한 수면'),
+    matching: find.byType(GuideEventCard),
+  );
+  expect(card, findsOneWidget);
+  final mark = tester.widget<Container>(
+    find.descendant(of: card, matching: find.byType(Container)),
+  );
+  final color = (mark.decoration! as BoxDecoration).color;
+  expect(color, JetlagTheme.loggedSleep);
+  expect(color, isNot(JetlagTheme.sleep));
+}
+
+class _PinnedBarDelegate extends SliverPersistentHeaderDelegate {
+  @override
+  double get minExtent => 104;
+
+  @override
+  double get maxExtent => 104;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return const ColoredBox(
+      key: ValueKey('test-pinned-bar'),
+      color: Color(0xFF111111),
+      child: SizedBox.expand(),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
+    return false;
+  }
+}
+
+TimelineSection _dateSection(
+  String heading,
+  DateTime day, {
+  String? lastTitle,
+}) {
+  return TimelineSection(
+    dayKey: '${day.year}-${day.month}-${day.day}',
+    heading: heading,
+    markers: [
+      for (var i = 0; i < 10; i++)
+        EventMarker(
+          event: GuideEvent(
+            id: '$heading-$i',
+            kind: GuideEventKind.meal,
+            startUtc: day.add(Duration(hours: i)),
+            title: i == 9 && lastTitle != null ? lastTitle : '일정 $i',
+            detail: '블록',
+          ),
+          dimmed: false,
+          dayKey: heading,
+        ),
+    ],
+  );
 }
 
 JetlagScheduleSnapshot _laxLayover() {

@@ -1,7 +1,6 @@
 import '../models/sleep_log.dart';
-import 'home_departure.dart';
 
-/// Signed sleep balance. Negative means the crew is short of the usual night.
+/// Signed sleep balance. Negative means saved sleep is short of the target.
 class SleepDebtSnapshot {
   const SleepDebtSnapshot(this.balance, {this.recorded = true});
 
@@ -18,40 +17,26 @@ class SleepDebtSnapshot {
 class SleepDebtCalculator {
   const SleepDebtCalculator();
 
-  /// Each logged night contributes actual minus usual.
-  /// With no saved night the balance stays zero. A dawn report that has not
-  /// been logged yet subtracts its shortfall only after the first night is in.
-  /// A log that overlaps that recommended window replaces the estimate.
+  /// Adds only the shortfall of each saved log against [target].
+  /// A log at or above [target] adds nothing, and extra hours do not cancel
+  /// another log. With no saved log the balance stays zero: an estimated
+  /// dawn shortfall is not part of this number.
   SleepDebtSnapshot evaluate({
-    required Duration usual,
+    required Duration target,
     required List<SleepLog> logs,
-    HomeDeparturePlan departure = HomeDeparturePlan.none,
   }) {
-    var balance = Duration.zero;
-    var coversPlan = false;
+    var shortfall = Duration.zero;
     var recorded = false;
-    final planStart = departure.recommendedStartUtc;
-    final planEnd = departure.recommendedEndUtc;
     for (final log in logs) {
       if (!log.isValid) continue;
       recorded = true;
-      balance += log.duration - usual;
-      if (departure.applies &&
-          planStart != null &&
-          planEnd != null &&
-          log.overlaps(planStart, planEnd)) {
-        coversPlan = true;
-      }
+      final missing = target - log.duration;
+      if (missing > Duration.zero) shortfall += missing;
     }
     if (!recorded) {
       return const SleepDebtSnapshot(Duration.zero, recorded: false);
     }
-    if (departure.applies &&
-        !coversPlan &&
-        departure.shortfall > Duration.zero) {
-      balance -= departure.shortfall;
-    }
-    return SleepDebtSnapshot(balance);
+    return SleepDebtSnapshot(-shortfall);
   }
 }
 

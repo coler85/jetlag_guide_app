@@ -38,24 +38,27 @@ class StickyTimeline extends StatelessWidget {
       slivers: [
         header,
         for (final section in sections)
-          if (section.markers.isNotEmpty) ...[
-            if (section.hasDatedContent)
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _DateHeaderDelegate(section.heading),
-              ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _row(section.markers[index]),
-                  );
-                }, childCount: section.markers.length),
-              ),
+          if (section.markers.isNotEmpty)
+            SliverMainAxisGroup(
+              slivers: [
+                if (section.hasDatedContent)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _DateHeaderDelegate(section.heading),
+                  ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _row(section.markers[index]),
+                      );
+                    }, childCount: section.markers.length),
+                  ),
+                ),
+              ],
             ),
-          ],
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 28),
@@ -125,6 +128,7 @@ class _DateHeaderDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     return DecoratedBox(
+      key: const ValueKey('timeline-date-header'),
       decoration: BoxDecoration(
         color: JetlagTheme.bg,
         border: Border(

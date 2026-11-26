@@ -70,6 +70,19 @@ class UserSettingsForm extends StatelessWidget {
             settings.copyWith(homeShowupLead: Duration(minutes: minutes)),
           ),
         ),
+        _DurationRow(
+          rowKey: const ValueKey('settings-sleep-target'),
+          label: '내가 정한 수면 목표',
+          minutes: settings.sleepTarget.inMinutes,
+          minMinutes: UserSettings.minSleepTarget.inMinutes,
+          maxMinutes: UserSettings.maxSleepTarget.inMinutes,
+          stepMinutes: 30,
+          valueLabel: _sleepTargetLabel(settings.sleepTarget),
+          valueWidth: 96,
+          onChanged: (minutes) => onChanged(
+            settings.copyWith(chosenSleep: Duration(minutes: minutes)),
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
           '하이브리드 모드 최대 이동 시간 · ${settings.hybridMaxShiftHours}시간',
@@ -103,6 +116,14 @@ class UserSettingsForm extends StatelessWidget {
   }
 }
 
+String _sleepTargetLabel(Duration duration) {
+  final minutes = duration.inMinutes;
+  final hours = minutes ~/ 60;
+  final mins = minutes % 60;
+  if (mins == 0) return '$hours시간';
+  return '$hours시간 $mins분';
+}
+
 class _ClockRow extends StatelessWidget {
   const _ClockRow({
     required this.rowKey,
@@ -134,16 +155,22 @@ class _DurationRow extends StatelessWidget {
     required this.label,
     required this.minutes,
     required this.onChanged,
+    this.minMinutes = 0,
     this.maxMinutes = 180,
     this.stepMinutes = 15,
+    this.valueLabel,
+    this.valueWidth = 64,
   });
 
   final Key rowKey;
   final String label;
   final int minutes;
   final ValueChanged<int> onChanged;
+  final int minMinutes;
   final int maxMinutes;
   final int stepMinutes;
+  final String? valueLabel;
+  final double valueWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -154,15 +181,15 @@ class _DurationRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: JetlagTheme.body)),
           IconButton(
-            onPressed: minutes < stepMinutes
+            onPressed: minutes - stepMinutes < minMinutes
                 ? null
                 : () => onChanged(minutes - stepMinutes),
             icon: const Icon(Icons.remove_circle_outline),
           ),
           SizedBox(
-            width: 64,
+            width: valueWidth,
             child: Text(
-              '$minutes분',
+              valueLabel ?? '$minutes분',
               textAlign: TextAlign.center,
               style: JetlagTheme.body,
             ),

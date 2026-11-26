@@ -10,6 +10,7 @@ import '../models/flight_schedule_input.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/user_settings.dart';
 import '../theme/jetlag_theme.dart';
+import 'pickup_lead_line.dart';
 import 'timezone_picker.dart';
 import 'wheel_time_picker.dart';
 
@@ -78,7 +79,6 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
   late final _LegDraft _ret;
   var _returnOriginDirty = false;
   var _fillingReturn = false;
-  var _includePickup = false;
   late DateTime _pickupDay;
   late TimeOfDay _pickupTime;
   DateTime? _showupUtc;
@@ -194,32 +194,7 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
             ),
           ],
           const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('레이오버 현지 픽업', style: JetlagTheme.body),
-            subtitle: Text(_place(_layoverCode()), style: JetlagTheme.caption),
-            value: _includePickup,
-            onChanged: (value) => setState(() => _includePickup = value),
-          ),
-          if (_includePickup) ...[
-            _WhenRow(
-              rowKey: const ValueKey('manual-layover-pickup'),
-              label: '픽업',
-              place: _place(_layoverCode()),
-              value: _stamp(_pickupDay, _pickupTime),
-              note: _leadNote(_leadMinutes()),
-              noteKey: const ValueKey('manual-layover-lead'),
-              onTap: () => _pickWhen(
-                day: _pickupDay,
-                time: _pickupTime,
-                apply: (day, time) => setState(() {
-                  _pickupDay = day;
-                  _pickupTime = time;
-                }),
-              ),
-            ),
-            if (_leadMinutes() != null) _leadStepper(_leadMinutes()!),
-          ],
+          _pickupSection(),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -599,9 +574,28 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
     return pickupLeadMinutes(departure, pickup);
   }
 
-  String? _leadNote(int? minutes) {
-    if (minutes == null) return null;
-    return '오는 편 ${pickupRelativeToDeparture(minutes)}';
+  Widget _pickupSection() {
+    final minutes = _leadMinutes();
+    return Column(
+      key: const ValueKey('manual-layover-pickup'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('픽업', style: JetlagTheme.body),
+        PickupClockLeadLine(
+          clock: _stamp(_pickupDay, _pickupTime),
+          minutes: minutes,
+          onLead: minutes == null ? null : _applyLead,
+          onClockTap: () => _pickWhen(
+            day: _pickupDay,
+            time: _pickupTime,
+            apply: (day, time) => setState(() {
+              _pickupDay = day;
+              _pickupTime = time;
+            }),
+          ),
+        ),
+      ],
+    );
   }
 
   void _applyLead(int minutes) {
@@ -613,33 +607,6 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
       _pickupDay = split.$1;
       _pickupTime = split.$2;
     });
-  }
-
-  Widget _leadStepper(int minutes) {
-    return Row(
-      key: const ValueKey('manual-layover-lead-step'),
-      children: [
-        IconButton(
-          onPressed: minutes <= 0
-              ? null
-              : () => _applyLead(stepPickupLead(minutes, -1)),
-          icon: const Icon(Icons.remove_circle_outline),
-        ),
-        Expanded(
-          child: Text(
-            pickupRelativeToDeparture(minutes),
-            textAlign: TextAlign.center,
-            style: JetlagTheme.body,
-          ),
-        ),
-        IconButton(
-          onPressed: minutes >= pickupLeadMaxMinutes
-              ? null
-              : () => _applyLead(stepPickupLead(minutes, 1)),
-          icon: const Icon(Icons.add_circle_outline),
-        ),
-      ],
-    );
   }
 
   String? _airport(TextEditingController controller) =>
@@ -688,13 +655,10 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
     }
     if (_error != null) return;
 
-    DateTime? pickup;
-    if (_includePickup) {
-      pickup = _tryInstant(_layoverZone(), _pickupDay, _pickupTime);
-      if (pickup == null) {
-        _fail('픽업 시간대를 확인한 뒤 다시 저장해 주세요.');
-        return;
-      }
+    final pickup = _tryInstant(_layoverZone(), _pickupDay, _pickupTime);
+    if (pickup == null) {
+      _fail('픽업 시간대를 확인한 뒤 다시 저장해 주세요.');
+      return;
     }
 
     Navigator.pop(
@@ -791,7 +755,6 @@ class _ManualScheduleFormState extends State<ManualScheduleForm> {
     }
     final pickup = initial.layoverPickupUtc;
     if (pickup != null) {
-      _includePickup = true;
       final split = _split(pickup, _layoverZone());
       _pickupDay = split.$1;
       _pickupTime = split.$2;
@@ -874,8 +837,6 @@ class _WhenRow extends StatelessWidget {
     required this.label,
     required this.place,
     required this.value,
-    this.note,
-    this.noteKey,
     required this.onTap,
   });
 
@@ -883,8 +844,6 @@ class _WhenRow extends StatelessWidget {
   final String label;
   final String place;
   final String value;
-  final String? note;
-  final Key? noteKey;
   final VoidCallback onTap;
 
   @override
@@ -901,10 +860,6 @@ class _WhenRow extends StatelessWidget {
             Text(place, style: JetlagTheme.caption),
             const SizedBox(height: 2),
             Text(value, style: JetlagTheme.localClock),
-            if (note != null) ...[
-              const SizedBox(height: 2),
-              Text(note!, key: noteKey, style: JetlagTheme.caption),
-            ],
           ],
         ),
       ),

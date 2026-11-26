@@ -59,14 +59,14 @@ class HomeDepartureAdvisor {
     final forcedWake = report.toUtc().subtract(lead);
     if (!forcedWake.isBefore(night.wakeUtc)) return HomeDeparturePlan.none;
 
-    final usual = night.wakeUtc.difference(night.bedUtc);
-    if (usual <= Duration.zero) return HomeDeparturePlan.none;
+    final target = settings.sleepTarget;
+    if (target <= Duration.zero) return HomeDeparturePlan.none;
 
     final keptEnd = forcedWake.isBefore(night.bedUtc)
         ? night.bedUtc
         : forcedWake;
     final kept = keptEnd.difference(night.bedUtc);
-    final missing = usual - kept;
+    final missing = target - kept;
     final shortfall = missing.isNegative ? Duration.zero : missing;
 
     return HomeDeparturePlan(
@@ -75,7 +75,7 @@ class HomeDepartureAdvisor {
       forcedWakeUtc: forcedWake,
       naturalBedUtc: night.bedUtc,
       naturalWakeUtc: night.wakeUtc,
-      recommendedStartUtc: forcedWake.subtract(usual),
+      recommendedStartUtc: forcedWake.subtract(target),
       recommendedEndUtc: forcedWake,
       shortfall: shortfall,
     );

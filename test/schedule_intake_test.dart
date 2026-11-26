@@ -481,7 +481,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('레이오버'), findsOneWidget);
-    expect(find.text('픽업 16:50 (출발 2시간 10분 전)'), findsOneWidget);
+    expect(find.text('현지 픽업'), findsNothing);
+    expect(find.textContaining('픽업 16:50'), findsNothing);
 
     await tester.drag(
       find.byKey(const ValueKey('schedule-header-page')),
@@ -502,6 +503,63 @@ void main() {
     );
     expect(find.text('AMS'), findsWidgets);
     expect(find.text('ICN'), findsWidgets);
+  });
+
+  testWidgets('the pickup sheet lead moves the pickup clock', (tester) async {
+    ensureJetlagTimeZones();
+    final controller = JetlagGuideController(
+      logStore: const JetlagLogStore(),
+      alerts: _SilentAlerts(),
+      now: () => DateTime.utc(2026, 11, 26, 12),
+    );
+    final roster = KeRosterGateway(
+      canOpen: (_) async => false,
+      openUri: (_) async => true,
+    );
+    addTearDown(controller.dispose);
+    addTearDown(roster.dispose);
+    await controller.adoptSchedule(_headerTrip());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScheduleScreen(
+            controller: controller,
+            roster: roster,
+            onSchedule: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('픽업 시간 수정'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const ValueKey('pickup-time-sheet')), findsOneWidget);
+    expect(find.text('출발 2시간 10분 전'), findsOneWidget);
+    expect(find.text('11월 26일 · 16:50'), findsOneWidget);
+    final clock = tester.getRect(find.text('11월 26일 · 16:50'));
+    final lead = tester.getRect(
+      find.byKey(const ValueKey('pickup-lead-controls')),
+    );
+    expect((clock.center.dy - lead.center.dy).abs(), lessThan(8));
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('pickup-lead-controls')),
+        matching: find.byIcon(Icons.add_circle_outline),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('출발 2시간 20분 전'), findsOneWidget);
+    expect(find.text('11월 26일 · 16:40'), findsOneWidget);
+    await tester.tap(find.text('완료'));
+    await tester.pumpAndSettle();
+
+    expect(controller.schedule.pickupUtc, DateTime.utc(2026, 11, 26, 15, 40));
+    expect(find.text('현지 픽업'), findsNothing);
   });
 
   testWidgets('a return-only record is one header card', (tester) async {

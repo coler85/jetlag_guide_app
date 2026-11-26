@@ -66,17 +66,19 @@ void main() {
     await tester.tap(find.text('열기'));
     await tester.pumpAndSettle();
 
-    expect(find.text('오는 편 출발 2시간 전'), findsOneWidget);
-    expect(find.textContaining('02:00'), findsWidgets);
+    expect(find.text('레이오버 현지 픽업'), findsNothing);
+    expect(find.text('출발 2시간 전'), findsOneWidget);
+    expect(find.text('11월 28일 · 02:00'), findsOneWidget);
+    _expectLeadBesideClock(tester, '11월 28일 · 02:00');
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey('manual-layover-lead-step')),
+        of: find.byKey(const ValueKey('pickup-lead-controls')),
         matching: find.byIcon(Icons.add_circle_outline),
       ),
     );
     await tester.pump();
 
-    expect(find.text('오는 편 출발 2시간 10분 전'), findsOneWidget);
+    expect(find.text('출발 2시간 10분 전'), findsOneWidget);
     expect(find.textContaining('01:50'), findsWidgets);
     await tester.tap(find.byKey(const ValueKey('manual-save')));
     await tester.pumpAndSettle();
@@ -93,16 +95,16 @@ void main() {
       _formApp(initial: _pickupTrip(DateTime.utc(2026, 11, 28, 0, 53))),
     );
 
-    expect(find.text('오는 편 출발 2시간 7분 전'), findsOneWidget);
+    expect(find.text('출발 2시간 7분 전'), findsOneWidget);
     expect(find.textContaining('2시간 10분'), findsNothing);
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey('manual-layover-lead-step')),
+        of: find.byKey(const ValueKey('pickup-lead-controls')),
         matching: find.byIcon(Icons.add_circle_outline),
       ),
     );
     await tester.pump();
-    expect(find.text('오는 편 출발 2시간 17분 전'), findsOneWidget);
+    expect(find.text('출발 2시간 17분 전'), findsOneWidget);
     expect(find.textContaining('01:43'), findsWidgets);
   });
 
@@ -125,12 +127,39 @@ void main() {
     );
 
     expect(find.byKey(const ValueKey('manual-layover-pickup')), findsOneWidget);
-    expect(find.byKey(const ValueKey('manual-layover-lead')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('manual-layover-lead-step')),
-      findsNothing,
-    );
+    expect(find.text('레이오버 현지 픽업'), findsNothing);
+    expect(find.byKey(const ValueKey('pickup-lead-controls')), findsNothing);
     expect(find.textContaining('오는 편 출발'), findsNothing);
+  });
+
+  testWidgets('the pickup lead stays beside the clock on a narrow screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      _formApp(initial: _pickupTrip(DateTime.utc(2026, 11, 28, 1))),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('pickup-lead-controls')),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('manual-schedule-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .at(0),
+    );
+    expect(tester.takeException(), isNull);
+    _expectLeadBesideClock(tester, '11월 28일 · 02:00');
+    final lead = tester.getRect(
+      find.byKey(const ValueKey('pickup-lead-controls')),
+    );
+    expect(lead.right, lessThanOrEqualTo(320));
+    expect(lead.left, greaterThanOrEqualTo(0));
   });
 
   testWidgets('the form fits a phone width', (tester) async {
@@ -329,6 +358,52 @@ void main() {
     expect(find.textContaining('BBB 현지'), findsWidgets);
   });
 
+  testWidgets('the chosen sleep target steps by 30 minutes', (tester) async {
+    var settings = UserSettings.defaults;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return UserSettingsForm(
+                settings: settings,
+                onChanged: (next) => setState(() => settings = next),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('내가 정한 수면 목표'), findsOneWidget);
+    expect(find.text('7시간'), findsOneWidget);
+    expect(find.textContaining('권장'), findsNothing);
+    expect(find.textContaining('필요'), findsNothing);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings-sleep-target')),
+        matching: find.byIcon(Icons.add_circle_outline),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('7시간 30분'), findsOneWidget);
+    expect(settings.sleepTarget, const Duration(hours: 7, minutes: 30));
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings-sleep-target')),
+        matching: find.byIcon(Icons.remove_circle_outline),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('7시간'), findsOneWidget);
+    expect(settings.sleepTarget, const Duration(hours: 7));
+  });
+
   testWidgets('settings show the home-base show-up lead', (tester) async {
     var settings = UserSettings.defaults;
     await tester.pumpWidget(
@@ -410,6 +485,14 @@ void main() {
     expect(find.text('ICN 시간대 · Asia/Seoul'), findsWidgets);
     expect(find.text('AMS 시간대 · Europe/Amsterdam'), findsWidgets);
   });
+}
+
+void _expectLeadBesideClock(WidgetTester tester, String clock) {
+  final time = tester.getRect(find.text(clock));
+  final lead = tester.getRect(
+    find.byKey(const ValueKey('pickup-lead-controls')),
+  );
+  expect((time.center.dy - lead.center.dy).abs(), lessThan(8));
 }
 
 FlightScheduleInput _pickupTrip(DateTime pickupUtc) {

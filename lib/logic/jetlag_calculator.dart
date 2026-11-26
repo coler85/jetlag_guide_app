@@ -8,7 +8,6 @@ import '../models/sleep_log.dart';
 import '../models/user_settings.dart';
 import 'guide_plan.dart';
 import 'home_base_timezone.dart';
-import 'home_departure.dart';
 import 'sleep_debt.dart';
 
 /// One pass of the guide timeline for a single home base.
@@ -51,7 +50,6 @@ class JetLagTimeline {
 class JetLagCalculator {
   const JetLagCalculator();
 
-  final HomeDepartureAdvisor homeDeparture = const HomeDepartureAdvisor();
   final SleepDebtCalculator sleepDebt = const SleepDebtCalculator();
 
   JetLagTimeline calculate({
@@ -134,14 +132,9 @@ class JetLagCalculator {
             scheduleKey: log.scheduleKey,
           ),
     ];
-    final departure = homeDeparture.evaluate(
-      schedule: effective,
-      settings: normalized,
-    );
     final debt = sleepDebt.evaluate(
-      usual: normalized.usualSleep,
+      target: normalized.sleepTarget,
       logs: utcSleep,
-      departure: departure,
     );
     final events = buildGuideEvents(
       effective,
