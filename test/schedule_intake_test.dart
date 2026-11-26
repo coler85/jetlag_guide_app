@@ -103,7 +103,7 @@ void main() {
   test('deep link becomes a layover and rejects a broken one', () {
     ensureJetlagTimeZones();
     final input = FlightScheduleLink.tryParse(
-      'jetlagguide://schedule?flight=ke017&origin=icn&destination=lax'
+      'jetlagguide://schedule?flight=xx000&origin=icn&destination=lax'
       '&tz=America/Los_Angeles'
       '&sta=2026-11-15T18:00:00.000Z'
       '&std=2026-11-16T16:00:00.000Z'
@@ -114,7 +114,7 @@ void main() {
     expect(input, isNotNull);
     expect(input!.origin, 'ICN');
     expect(input.destination, 'LAX');
-    expect(input.flightNumber, 'KE017');
+    expect(input.flightNumber, 'XX000');
     expect(input.stdUtc.isAfter(input.staUtc), isTrue);
     expect(input.pickupUtc, DateTime.utc(2026, 11, 16, 12));
     expect(input.blockMinutes, 840);
@@ -337,20 +337,14 @@ void main() {
     expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
   });
 
-  testWidgets('unsupported airline report explains the mail', (tester) async {
+  testWidgets('unsupported airline report stays off the schedule tab', (
+    tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('schedule-action-report')));
-    await tester.pumpAndSettle();
-
-    expect(find.text(kScheduleReportPrompt), findsOneWidget);
-    expect(find.textContaining(kScheduleReportSubject), findsOneWidget);
-    expect(find.text(kScheduleReportEmail), findsOneWidget);
-
-    await tester.tap(find.text('닫기'));
-    await tester.pumpAndSettle();
-    expect(find.text(kScheduleReportPrompt), findsNothing);
+    expect(kShowReportMail, isFalse);
+    expect(find.byKey(const ValueKey('schedule-action-report')), findsNothing);
   });
 
   testWidgets('an entered schedule is on the timeline after restart', (
@@ -384,10 +378,10 @@ void main() {
 
     await tester.tap(find.text('타임라인'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('샘플 일정 보기'));
+    await tester.tap(find.text('예시 일정 둘러보기'));
     await tester.pumpAndSettle();
 
-    expect(find.text('샘플 일정'), findsOneWidget);
+    expect(find.text('예시 데이터입니다'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(FlightScheduleStore.preferenceKey), isNull);
 
@@ -396,7 +390,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('jetlag-schedule-page')), findsOneWidget);
     expect(find.byType(TimelinePage), findsNothing);
-    expect(find.text('샘플 일정'), findsNothing);
+    expect(find.text('예시 데이터입니다'), findsNothing);
   });
 
   testWidgets('clearing a schedule returns to the guide', (tester) async {

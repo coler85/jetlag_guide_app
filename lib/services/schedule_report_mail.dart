@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+/// Hides the report-mail card until an inbox is ready.
+const kShowReportMail = false;
+
 /// Replace this when the report inbox is decided.
 const kScheduleReportEmail = 'dev@jetlagguide.app';
 

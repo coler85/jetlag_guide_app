@@ -67,7 +67,7 @@ List<GuideEvent> lifestyleBlocks({
         endUtc: sleep.endUtc,
         title: '수면',
         detail: sleep.earlyShowUp
-            ? '새벽 쇼업에 맞춰 미리 잡니다. 강제 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
+            ? '새벽 쇼업에 맞춰 미리 잡니다. 알람 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
             : lifestyle.sleepDetailFor(
                 schedule.referenceTimeZone,
                 hybridMaxShiftHours: settings.hybridMaxShiftHours,

@@ -6,8 +6,33 @@ import 'package:timezone/timezone.dart' as tz;
 void main() {
   setUpAll(ensureJetlagTimeZones);
 
+  test('every listed airport has a real zone and coordinates', () {
+    expect(airportPlaces.length, 309);
+    expect(airportZones.length, airportPlaces.length);
+    for (final entry in airportPlaces.entries) {
+      final place = entry.value;
+      expect(entry.key, entry.key.toUpperCase());
+      expect(entry.key.length, 3);
+      expect(place.latitude, inInclusiveRange(-90, 90));
+      expect(place.longitude, inInclusiveRange(-180, 180));
+      expect(airportZones[entry.key], place.zone);
+      expect(
+        () => tz.getLocation(place.zone),
+        returnsNormally,
+        reason: '${entry.key} -> ${place.zone}',
+      );
+    }
+    expect(placeForAirport('ICN')?.latitude, closeTo(37.469101, 0.000001));
+    expect(placeForAirport('ICN')?.longitude, closeTo(126.450996, 0.000001));
+    expect(placeForAirport('fru')?.latitude, closeTo(43.061298, 0.000001));
+    expect(placeForAirport('FRU')?.longitude, closeTo(74.4776, 0.000001));
+    expect(placeForAirport('REP')?.latitude, closeTo(13.36974, 0.000001));
+    expect(placeForAirport('REP')?.longitude, closeTo(104.223831, 0.000001));
+    expect(placeForAirport('ZZZ'), isNull);
+  });
+
   test('every listed airport zone exists in the timezone database', () {
-    expect(airportZones.length, greaterThanOrEqualTo(150));
+    expect(airportZones.length, 309);
     for (final entry in airportZones.entries) {
       expect(entry.key, entry.key.toUpperCase());
       expect(entry.key.length, 3);

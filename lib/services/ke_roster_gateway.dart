@@ -7,17 +7,17 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/flight_schedule_input.dart';
 import 'flight_schedule_link.dart';
 
+/// Hides the roster import card until the link is turned back on.
+const kShowRosterImport = false;
+
 enum KeRosterOpenResult { opened, notInstalled, failed }
 
 /// Opens KE Roster and accepts `jetlagguide://schedule` replies.
 ///
 /// Cold start is [takeInitialLink]. A running app receives [incoming].
 class KeRosterGateway {
-  KeRosterGateway({
-    MethodChannel? channel,
-    this.canOpen,
-    this.openUri,
-  }) : _channel = channel ?? const MethodChannel(channelName);
+  KeRosterGateway({MethodChannel? channel, this.canOpen, this.openUri})
+    : _channel = channel ?? const MethodChannel(channelName);
 
   static const channelName = 'jetlag_guide/deep_link';
   static const waitRouteName = 'ke-roster-wait';

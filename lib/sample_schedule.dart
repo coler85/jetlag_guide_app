@@ -9,7 +9,7 @@ import 'models/jetlag_schedule.dart';
 FlightScheduleInput sampleFlightSchedule({DateTime? now}) {
   final clock = (now ?? DateTime.now()).toUtc();
   return FlightScheduleInput(
-    flightNumber: 'KE017',
+    flightNumber: 'XX000',
     origin: 'ICN',
     destination: 'LAX',
     destinationTimeZone: 'America/Los_Angeles',

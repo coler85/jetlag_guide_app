@@ -9,16 +9,18 @@ class GuideEventCard extends StatelessWidget {
     required this.event,
     required this.localClock,
     required this.supportingClock,
+    this.onTap,
   });
 
   final GuideEvent event;
   final String localClock;
   final String supportingClock;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final accent = JetlagTheme.accentFor(event.kind);
-    return DecoratedBox(
+    final card = DecoratedBox(
       decoration: BoxDecoration(
         color: JetlagTheme.card,
         borderRadius: BorderRadius.circular(14),
@@ -62,6 +64,18 @@ class GuideEventCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+    final onTap = this.onTap;
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: card,
       ),
     );
   }

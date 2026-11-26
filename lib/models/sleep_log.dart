@@ -16,6 +16,29 @@ class SleepLog {
   final DateTime endUtc;
   final String scheduleKey;
 
+  static const eventIdPrefix = 'logged-sleep-';
+
+  static String eventIdFor(String id) => '$eventIdPrefix$id';
+
+  /// Log id stored on a timeline block, or null when the block is not a log.
+  static String? idFromEvent(String eventId) {
+    if (!eventId.startsWith(eventIdPrefix)) return null;
+    final id = eventId.substring(eventIdPrefix.length);
+    return id.isEmpty ? null : id;
+  }
+
+  /// Stable id for a save that predates [id]. The same interval reads back
+  /// as the same id, so an older file is not dropped.
+  static String legacyId({
+    required DateTime startUtc,
+    required DateTime endUtc,
+    required String scheduleKey,
+  }) {
+    final start = startUtc.toUtc().microsecondsSinceEpoch;
+    final end = endUtc.toUtc().microsecondsSinceEpoch;
+    return 'legacy-$start-$end-$scheduleKey';
+  }
+
   Duration get duration => endUtc.difference(startUtc);
 
   bool get isValid => endUtc.isAfter(startUtc);
@@ -37,20 +60,28 @@ class SleepLog {
   };
 
   static SleepLog? tryParse(Map<String, Object?> json) {
-    final id = json['id'];
     final start = json['start'];
     final end = json['end'];
     final schedule = json['schedule'];
-    if (id is! String || start is! String || end is! String) return null;
+    if (start is! String || end is! String) return null;
     final startUtc = DateTime.tryParse(start);
     final endUtc = DateTime.tryParse(end);
     if (startUtc == null || endUtc == null) return null;
     if (!endUtc.toUtc().isAfter(startUtc.toUtc())) return null;
+    final scheduleKey = schedule is String ? schedule : '';
+    final rawId = json['id'];
+    final id = rawId is String && rawId.trim().isNotEmpty
+        ? rawId.trim()
+        : legacyId(
+            startUtc: startUtc,
+            endUtc: endUtc,
+            scheduleKey: scheduleKey,
+          );
     return SleepLog(
       id: id,
       startUtc: startUtc,
       endUtc: endUtc,
-      scheduleKey: schedule is String ? schedule : '',
+      scheduleKey: scheduleKey,
     );
   }
 }

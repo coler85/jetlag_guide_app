@@ -182,7 +182,7 @@ class _ScheduleMissing extends StatelessWidget {
             const Text('일정이 없습니다', style: JetlagTheme.title),
             const SizedBox(height: 8),
             const Text(
-              '스케줄 탭에서 파일, KE Roster, 또는 직접 입력으로 비행 일정을 넣을 수 있습니다.',
+              '스케줄 탭에서 파일 또는 직접 입력으로 비행 일정을 넣을 수 있습니다.',
               style: JetlagTheme.body,
               textAlign: TextAlign.center,
             ),
@@ -201,7 +201,7 @@ class _ScheduleMissing extends StatelessWidget {
                   ),
                 );
               },
-              child: const Text('샘플 일정 보기'),
+              child: const Text('예시 일정 둘러보기'),
             ),
           ],
         ),

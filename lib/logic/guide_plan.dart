@@ -212,7 +212,7 @@ List<GuideEvent> buildGuideEvents(
     if (!log.isValid) continue;
     events.add(
       GuideEvent(
-        id: 'logged-sleep-${log.id}',
+        id: SleepLog.eventIdFor(log.id),
         kind: GuideEventKind.loggedSleep,
         startUtc: log.startUtc,
         endUtc: log.endUtc,
@@ -317,7 +317,7 @@ DateTime? _nextKind(
   if (caffeine != null && (sleep == null || !caffeine.isAfter(sleep))) {
     return (label: '카페인 컷오프', instant: caffeine);
   }
-  return (label: '다음 권장 취침', instant: sleep);
+  return (label: '다음 취침 계획', instant: sleep);
 }
 
 JetlagDashboard buildDashboard({
@@ -347,8 +347,8 @@ JetlagDashboard buildDashboard({
   if (sleeping) {
     state = openSleepLog(logs) != null || coveringLog != null
         ? '수면 중'
-        : '수면 권장';
-    cueLabel = '권장 기상';
+        : '수면 계획';
+    cueLabel = '기상 계획';
     cueInstant =
         coveringLog?.endUtc ??
         recommendedWake(events: events, logs: logs, now: nowUtc);
@@ -373,7 +373,7 @@ JetlagDashboard buildDashboard({
     cueLabel: cueLabel,
     cueClock: cueInstant == null ? '—' : formatHm(cueInstant, local),
     cueZone: cueInstant == null
-        ? (sleeping ? '권장 시각 없음' : '예정 없음')
+        ? (sleeping ? '계획 시각 없음' : '예정 없음')
         : formatHomeAndUtc(cueInstant, home),
     pickupMissing: pickup == null,
     pickupClock: pickup == null ? '미입력' : formatHm(pickup, local),

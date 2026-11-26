@@ -32,7 +32,7 @@ class JetLagTimeline {
       dashboard: JetlagDashboard(
         sleeping: false,
         stateLabel: '활동 중',
-        cueLabel: '다음 권장 취침',
+        cueLabel: '다음 취침 계획',
         cueClock: '—',
         cueZone: '시간대를 계산하지 못했습니다',
         pickupMissing: schedule.pickupUtc == null,

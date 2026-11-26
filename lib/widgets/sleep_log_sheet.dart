@@ -6,22 +6,36 @@ import '../theme/jetlag_theme.dart';
 import 'wheel_time_picker.dart';
 
 /// Start and end of a sleep the crew is about to save. Both are UTC.
+///
+/// [deleted] is true when the edit sheet confirmed a delete. The instants are
+/// then the values that were on screen, and the caller drops the record.
 class SleepInterval {
-  const SleepInterval({required this.startUtc, required this.endUtc});
+  const SleepInterval({
+    required this.startUtc,
+    required this.endUtc,
+    this.deleted = false,
+  });
 
   final DateTime startUtc;
   final DateTime endUtc;
+  final bool deleted;
 }
 
+/// Records a new sleep, or edits one when both [startUtc] and [endUtc] are set.
+/// Edit mode reuses this sheet and adds a delete action.
 Future<SleepInterval?> showSleepLogSheet({
   required BuildContext context,
   required DateTime nowUtc,
   required Duration usualSleep,
   required String iana,
   required String zoneLabel,
+  DateTime? startUtc,
+  DateTime? endUtc,
 }) {
-  final end = nowUtc.toUtc();
+  final editing = startUtc != null && endUtc != null;
   final usual = usualSleep > Duration.zero ? usualSleep : Duration.zero;
+  final end = (editing ? endUtc : nowUtc).toUtc();
+  final start = (editing ? startUtc : end.subtract(usual)).toUtc();
   return showModalBottomSheet<SleepInterval>(
     context: context,
     isScrollControlled: true,
@@ -31,9 +45,10 @@ Future<SleepInterval?> showSleepLogSheet({
     ),
     builder: (context) {
       return _SleepLogSheet(
-        nowUtc: end,
-        initialStart: end.subtract(usual),
+        nowUtc: nowUtc.toUtc(),
+        initialStart: start,
         initialEnd: end,
+        editing: editing,
         iana: iana,
         zoneLabel: zoneLabel,
       );
@@ -46,6 +61,7 @@ class _SleepLogSheet extends StatefulWidget {
     required this.nowUtc,
     required this.initialStart,
     required this.initialEnd,
+    required this.editing,
     required this.iana,
     required this.zoneLabel,
   });
@@ -53,6 +69,7 @@ class _SleepLogSheet extends StatefulWidget {
   final DateTime nowUtc;
   final DateTime initialStart;
   final DateTime initialEnd;
+  final bool editing;
   final String iana;
   final String zoneLabel;
 
@@ -65,7 +82,16 @@ class _SleepLogSheetState extends State<_SleepLogSheet> {
   late DateTime _end = widget.initialEnd.toUtc();
 
   /// Calendar day the crew picked. Null keeps the bed clock on its latest occurrence.
+  /// An edit pins the saved bed day so the clocks stay on that night.
   DateTime? _pinnedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.editing) return;
+    final wall = wallClock(_start, widget.iana);
+    _pinnedDay = DateTime.utc(wall.year, wall.month, wall.day);
+  }
 
   bool get _valid => _end.isAfter(_start);
 
@@ -143,21 +169,66 @@ class _SleepLogSheetState extends State<_SleepLogSheet> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: FilledButton(
-                key: const ValueKey('sleep-log-save'),
-                onPressed: _valid
-                    ? () {
-                        Navigator.of(context)
-                            .pop(SleepInterval(startUtc: _start, endUtc: _end));
-                      }
-                    : null,
-                child: const Text('저장'),
+              child: Row(
+                children: [
+                  if (widget.editing)
+                    TextButton(
+                      key: const ValueKey('sleep-log-delete'),
+                      onPressed: _confirmDelete,
+                      child: Text(
+                        '삭제',
+                        style: JetlagTheme.body.copyWith(
+                          color: JetlagTheme.debt,
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: FilledButton(
+                      key: const ValueKey('sleep-log-save'),
+                      onPressed: _valid
+                          ? () {
+                              Navigator.of(context).pop(
+                                SleepInterval(startUtc: _start, endUtc: _end),
+                              );
+                            }
+                          : null,
+                      child: const Text('저장'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          key: const ValueKey('sleep-log-delete-dialog'),
+          title: const Text('수면 기록 지우기'),
+          content: const Text('이 수면 기록을 지웁니다.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              key: const ValueKey('sleep-log-delete-confirm'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('삭제'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    Navigator.of(context)
+        .pop(SleepInterval(startUtc: _start, endUtc: _end, deleted: true));
   }
 
   String _whenLabel() {

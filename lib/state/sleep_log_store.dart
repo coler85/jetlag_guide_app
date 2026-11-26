@@ -32,11 +32,34 @@ class SleepLogStore {
     final decoded = jsonDecode(raw);
     if (decoded is! List) return const [];
     final logs = <SleepLog>[];
+    final used = <String>{};
     for (final item in decoded) {
       if (item is! Map) continue;
-      final log = SleepLog.tryParse(Map<String, Object?>.from(item));
-      if (log != null) logs.add(log);
+      final parsed = SleepLog.tryParse(Map<String, Object?>.from(item));
+      if (parsed == null) continue;
+      final id = _uniqueId(parsed.id, used);
+      used.add(id);
+      logs.add(
+        id == parsed.id
+            ? parsed
+            : SleepLog(
+                id: id,
+                startUtc: parsed.startUtc,
+                endUtc: parsed.endUtc,
+                scheduleKey: parsed.scheduleKey,
+              ),
+      );
     }
     return logs;
+  }
+
+  /// A second copy of the same legacy interval gets its own id.
+  static String _uniqueId(String base, Set<String> used) {
+    if (!used.contains(base)) return base;
+    var n = 2;
+    while (used.contains('$base#$n')) {
+      n++;
+    }
+    return '$base#$n';
   }
 }

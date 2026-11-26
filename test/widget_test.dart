@@ -1,19 +1,24 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jetlag_guide_app/logic/bunk_plan.dart';
 import 'package:jetlag_guide_app/logic/guide_plan.dart';
 import 'package:jetlag_guide_app/logic/jetlag_calculator.dart';
+import 'package:jetlag_guide_app/logic/sleep_debt.dart';
 import 'package:jetlag_guide_app/logic/jetlag_clock.dart';
 import 'package:jetlag_guide_app/main.dart';
 import 'package:jetlag_guide_app/models/bunk_shift.dart';
 import 'package:jetlag_guide_app/models/crew_log.dart';
 import 'package:jetlag_guide_app/models/guide_event.dart';
 import 'package:jetlag_guide_app/models/jetlag_schedule.dart';
+import 'package:jetlag_guide_app/models/sleep_log.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
 import 'package:jetlag_guide_app/sample_schedule.dart';
 import 'package:jetlag_guide_app/screens/jetlag_guide_shell.dart';
 import 'package:jetlag_guide_app/state/jetlag_guide_controller.dart';
+import 'package:jetlag_guide_app/state/sleep_log_store.dart';
 import 'package:jetlag_guide_app/theme/jetlag_theme.dart';
 import 'package:jetlag_guide_app/screens/timeline_page.dart';
 import 'package:jetlag_guide_app/widgets/sticky_timeline.dart';
@@ -68,24 +73,18 @@ void main() {
 
     expect(find.byKey(const ValueKey('jetlag-schedule-page')), findsOneWidget);
     expect(find.byKey(const ValueKey('schedule-action-file')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('schedule-action-roster')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('schedule-action-roster')), findsNothing);
     expect(
       find.byKey(const ValueKey('schedule-action-manual')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('schedule-action-report')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('schedule-action-report')), findsNothing);
     expect(find.byType(TimelinePage), findsNothing);
 
     await tester.tap(find.text('타임라인'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('jetlag-empty-schedule')), findsOneWidget);
-    expect(find.text('샘플 일정 보기'), findsOneWidget);
+    expect(find.text('예시 일정 둘러보기'), findsOneWidget);
 
     await tester.tap(find.text('기록·설정'));
     await tester.pumpAndSettle();
@@ -131,11 +130,11 @@ void main() {
 
     await tester.tap(find.text('타임라인'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('샘플 일정 보기'));
+    await tester.tap(find.text('예시 일정 둘러보기'));
     await tester.pumpAndSettle();
 
     expect(find.byType(TimelinePage), findsOneWidget);
-    expect(find.text('샘플 일정'), findsOneWidget);
+    expect(find.text('예시 데이터입니다'), findsOneWidget);
     expect(find.byKey(const ValueKey('log-caffeine')), findsOneWidget);
   });
 
@@ -195,12 +194,12 @@ void main() {
 
     final beforeSleep = _timeline(DateTime.utc(2026, 6, 4, 8));
     expect(beforeSleep.dashboard.sleeping, isFalse);
-    expect(beforeSleep.dashboard.cueLabel, '다음 권장 취침');
+    expect(beforeSleep.dashboard.cueLabel, '다음 취침 계획');
 
     final asleep = _timeline(DateTime.utc(2026, 6, 4, 15));
     expect(asleep.dashboard.sleeping, isTrue);
-    expect(asleep.dashboard.stateLabel, '수면 권장');
-    expect(asleep.dashboard.cueLabel, '권장 기상');
+    expect(asleep.dashboard.stateLabel, '수면 계획');
+    expect(asleep.dashboard.cueLabel, '기상 계획');
   });
 
   test('bunk card sits immediately after departure', () {
@@ -258,7 +257,7 @@ void main() {
     expect(find.text('카페인'), findsWidgets);
     expect(find.text('커피'), findsNothing);
     expect(find.text('카페인 컷오프'), findsOneWidget);
-    expect(find.text('권장 기상'), findsNothing);
+    expect(find.text('기상 계획'), findsNothing);
     expect(find.textContaining('6월 1일'), findsNothing);
     expect(find.byType(CustomScrollView), findsOneWidget);
 
@@ -385,6 +384,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('log-sleep')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('sleep-log-sheet')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sleep-log-delete')), findsNothing);
     expect(find.text('잠든 시간'), findsOneWidget);
     expect(find.text('기상 시간'), findsOneWidget);
 
@@ -556,6 +556,154 @@ void main() {
       1,
     );
   });
+
+  test('a sleep record saved without an id still loads', () async {
+    const key = 'LAX|2026-06-03T17:00:00.000Z|2026-06-05T17:00:00.000Z';
+    SharedPreferences.setMockInitialValues({
+      SleepLogStore.preferenceKey: jsonEncode([
+        {
+          'id': 'kept',
+          'start': '2026-06-01T00:00:00.000Z',
+          'end': '2026-06-01T06:00:00.000Z',
+          'schedule': key,
+        },
+        {
+          'start': '2026-06-04T10:15:00.000Z',
+          'end': '2026-06-04T15:45:00.000Z',
+          'schedule': key,
+        },
+        {
+          'start': '2026-06-04T10:15:00.000Z',
+          'end': '2026-06-04T15:45:00.000Z',
+          'schedule': key,
+        },
+      ]),
+    });
+
+    const store = SleepLogStore();
+    final logs = await store.load(key);
+    final legacy = SleepLog.legacyId(
+      startUtc: DateTime.utc(2026, 6, 4, 10, 15),
+      endUtc: DateTime.utc(2026, 6, 4, 15, 45),
+      scheduleKey: key,
+    );
+    expect(logs, hasLength(3));
+    expect(logs.map((log) => log.id).toSet(), {legacy, '$legacy#2', 'kept'});
+    final restored = logs.firstWhere((log) => log.id == legacy);
+    expect(restored.startUtc, DateTime.utc(2026, 6, 4, 10, 15));
+    expect(restored.endUtc, DateTime.utc(2026, 6, 4, 15, 45));
+
+    final again = await store.load(key);
+    expect(
+      again.map((log) => log.id).toList()..sort(),
+      logs.map((log) => log.id).toList()..sort(),
+    );
+    expect(
+      SleepLog.tryParse({
+        'start': '2026-06-04T15:00:00.000Z',
+        'end': '2026-06-04T10:00:00.000Z',
+      }),
+      isNull,
+    );
+  });
+
+  testWidgets('editing a logged sleep changes the debt and delete clears it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: JetlagGuideShell(
+          schedule: _laxLayover(),
+          now: () => DateTime.utc(2026, 6, 4, 12),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final plannedTitle = find.descendant(
+      of: find.byType(GuideEventCard),
+      matching: find.text('수면'),
+    );
+    await _revealTimelineItem(tester, plannedTitle);
+    final planned = find.ancestor(
+      of: plannedTitle.first,
+      matching: find.byType(GuideEventCard),
+    );
+    final plannedMark = tester.widget<Container>(
+      find.descendant(of: planned, matching: find.byType(Container)),
+    );
+    expect((plannedMark.decoration! as BoxDecoration).color, JetlagTheme.sleep);
+    await tester.tap(plannedTitle.first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sleep-log-sheet')), findsNothing);
+
+    final controller = tester
+        .element(find.byType(TimelinePage))
+        .read<JetlagGuideController>();
+    await controller.addSleepLog(
+      startUtc: DateTime.utc(2026, 6, 4, 10, 15),
+      endUtc: DateTime.utc(2026, 6, 4, 15, 45),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('-1시간 30분'), findsOneWidget);
+    final id = controller.sleepLogs.single.id;
+
+    await _revealTimelineItem(tester, find.text('기록한 수면'));
+    await tester.tap(find.text('기록한 수면'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sleep-log-delete')), findsOneWidget);
+    expect(find.text('6월 4일 03:15 - 08:45'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-end')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await _advanceWheel(tester, column: 0, steps: 2);
+    await tester.tap(find.text('완료'));
+    await tester.pumpAndSettle();
+    expect(find.text('6월 4일 03:15 - 10:45'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-save')));
+    await tester.pumpAndSettle();
+    expect(controller.sleepLogs.single.id, id);
+    expect(
+      controller.sleepLogs.single.endUtc,
+      DateTime.utc(2026, 6, 4, 17, 45),
+    );
+    expect(find.text('0분'), findsOneWidget);
+    expect(find.text('-1시간 30분'), findsNothing);
+
+    await _revealTimelineItem(tester, find.text('기록한 수면'));
+    await tester.tap(find.text('기록한 수면'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sleep-log-delete')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('sleep-log-delete-dialog')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sleep-log-sheet')), findsOneWidget);
+    expect(controller.sleepLogs, hasLength(1));
+
+    await tester.tap(find.byKey(const ValueKey('sleep-log-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sleep-log-delete-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(controller.sleepLogs, isEmpty);
+    final debt = const SleepDebtCalculator().evaluate(
+      target: controller.settings.sleepTarget,
+      logs: controller.sleepLogs,
+    );
+    expect(debt.balance, Duration.zero);
+    expect(debt.recorded, isFalse);
+    expect(find.text('수면 기록 없음'), findsOneWidget);
+    expect(find.text('0분'), findsNothing);
+    expect(find.text('기록한 수면'), findsNothing);
+  });
 }
 
 void _expectSaveAbove(WidgetTester tester, {required double reservedBottom}) {
@@ -579,15 +727,27 @@ Future<void> _advanceWheel(
   await tester.pump();
 }
 
-Future<void> _scrollToLoggedSleep(WidgetTester tester) {
+Future<void> _scrollTimeline(WidgetTester tester, Finder finder) {
   return tester.scrollUntilVisible(
-    find.text('기록한 수면'),
+    finder,
     400,
     scrollable: find.descendant(
       of: find.byKey(const ValueKey('jetlag-timeline')),
       matching: find.byType(Scrollable),
     ),
   );
+}
+
+/// Scrolls [finder] to the middle of the timeline so a tap is not covered by
+/// the pinned header or the bottom bar.
+Future<void> _revealTimelineItem(WidgetTester tester, Finder finder) async {
+  await _scrollTimeline(tester, finder);
+  await Scrollable.ensureVisible(tester.element(finder.first), alignment: 0.5);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _scrollToLoggedSleep(WidgetTester tester) {
+  return _scrollTimeline(tester, find.text('기록한 수면'));
 }
 
 void _expectLoggedSleepBlock(WidgetTester tester) {
@@ -664,7 +824,7 @@ JetlagScheduleSnapshot _laxLayover() {
     staUtc: DateTime.utc(2026, 6, 3, 17),
     stdUtc: DateTime.utc(2026, 6, 5, 17),
     pickupUtc: DateTime.utc(2026, 6, 4, 20),
-    flightNumber: 'KE017',
+    flightNumber: 'XX000',
   );
 }
 

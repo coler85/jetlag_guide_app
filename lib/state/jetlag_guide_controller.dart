@@ -253,6 +253,34 @@ class JetlagGuideController extends ChangeNotifier {
     });
   }
 
+  Future<void> updateSleepLog({
+    required String id,
+    required DateTime startUtc,
+    required DateTime endUtc,
+  }) {
+    return _lock(() async {
+      final schedule = _schedule;
+      if (_disposed || schedule == null) return;
+      final start = startUtc.toUtc();
+      final end = endUtc.toUtc();
+      if (!end.isAfter(start)) return;
+      final index = sleepLogs.indexWhere((log) => log.id == id);
+      if (index < 0) return;
+      final current = sleepLogs[index];
+      final next = [...sleepLogs];
+      next[index] = SleepLog(
+        id: current.id,
+        startUtc: start,
+        endUtc: end,
+        scheduleKey: current.scheduleKey,
+      );
+      await _sleepLogStore.save(schedule.key, next);
+      if (_disposed) return;
+      sleepLogs = next;
+      _publish();
+    });
+  }
+
   Future<void> removeSleepLog(String id) {
     return _lock(() async {
       final schedule = _schedule;

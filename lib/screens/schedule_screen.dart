@@ -86,7 +86,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '파일, KE Roster, 또는 직접 입력으로 시차 가이드를 만듭니다.',
+                    '파일 또는 직접 입력으로 시차 가이드를 만듭니다.',
                     style: JetlagTheme.caption,
                   ),
                   const SizedBox(height: 18),
@@ -98,14 +98,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     accent: JetlagTheme.duty,
                     onTap: _pickFile,
                   ),
-                  ScheduleActionCard(
-                    key: const ValueKey('schedule-action-roster'),
-                    emoji: '✈️',
-                    title: 'KE Roster에서 스케줄 불러오기',
-                    subtitle: '딥링크 연동',
-                    accent: JetlagTheme.meal,
-                    onTap: _openRoster,
-                  ),
+                  if (kShowRosterImport)
+                    ScheduleActionCard(
+                      key: const ValueKey('schedule-action-roster'),
+                      emoji: '✈️',
+                      title: 'KE Roster에서 스케줄 불러오기',
+                      subtitle: '딥링크 연동',
+                      accent: JetlagTheme.meal,
+                      onTap: _openRoster,
+                    ),
                   ScheduleActionCard(
                     key: const ValueKey('schedule-action-manual'),
                     emoji: '✍️',
@@ -114,14 +115,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     accent: JetlagTheme.sleep,
                     onTap: _enterManually,
                   ),
-                  ScheduleActionCard(
-                    key: const ValueKey('schedule-action-report'),
-                    emoji: '💡',
-                    title: '미지원 항공사 스케줄 양식 제보하기',
-                    subtitle: '스크린샷을 보내 분석 엔진에 추가합니다',
-                    accent: JetlagTheme.light,
-                    onTap: _reportFormat,
-                  ),
+                  if (kShowReportMail)
+                    ScheduleActionCard(
+                      key: const ValueKey('schedule-action-report'),
+                      emoji: '💡',
+                      title: '미지원 항공사 스케줄 양식 제보하기',
+                      subtitle: '스크린샷을 보내 분석 엔진에 추가합니다',
+                      accent: JetlagTheme.light,
+                      onTap: _reportFormat,
+                    ),
                 ],
               ),
             ),

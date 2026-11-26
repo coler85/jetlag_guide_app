@@ -317,7 +317,7 @@ JetlagScheduleSnapshot _laxLayover() {
     staUtc: DateTime.utc(2026, 6, 3, 17),
     stdUtc: DateTime.utc(2026, 6, 5, 17),
     pickupUtc: DateTime.utc(2026, 6, 4, 20),
-    flightNumber: 'KE017',
+    flightNumber: 'XX000',
   );
 }
 
@@ -331,7 +331,7 @@ JetLagTimeline _hybridTimeline(int capHours) {
       staUtc: DateTime.utc(2026, 6, 3, 17),
       stdUtc: DateTime.utc(2026, 6, 6, 17),
       pickupUtc: DateTime.utc(2026, 6, 5, 3),
-      flightNumber: 'KE017',
+      flightNumber: 'XX000',
     ),
     lifestyle: JetlagLifestyle.hybrid,
     logs: const [],

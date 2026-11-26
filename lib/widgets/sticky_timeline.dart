@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../logic/guide_plan.dart';
 import '../logic/jetlag_clock.dart';
 import '../models/bunk_shift.dart';
+import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
+import '../models/sleep_log.dart';
 import '../theme/jetlag_theme.dart';
 import 'bunk_selection_card.dart';
 import 'guide_event_card.dart';
@@ -20,6 +22,7 @@ class StickyTimeline extends StatelessWidget {
     required this.bunkShift,
     required this.onBunk,
     required this.onDismissLog,
+    this.onEditLoggedSleep,
   });
 
   final Widget header;
@@ -29,6 +32,9 @@ class StickyTimeline extends StatelessWidget {
   final BunkShift? bunkShift;
   final ValueChanged<BunkShift> onBunk;
   final ValueChanged<String> onDismissLog;
+
+  /// Called with the sleep log id when a recorded sleep block is tapped.
+  final ValueChanged<String>? onEditLoggedSleep;
 
   @override
   Widget build(BuildContext context) {
@@ -102,10 +108,16 @@ class StickyTimeline extends StatelessWidget {
       localTag: schedule.stationLabel,
       homeIana: schedule.referenceTimeZone,
     );
+    final logId = marker.event.kind == GuideEventKind.loggedSleep
+        ? SleepLog.idFromEvent(marker.event.id)
+        : null;
     return GuideEventCard(
       event: marker.event,
       localClock: clocks.local,
       supportingClock: clocks.supporting,
+      onTap: logId == null || onEditLoggedSleep == null
+          ? null
+          : () => onEditLoggedSleep!(logId),
     );
   }
 }

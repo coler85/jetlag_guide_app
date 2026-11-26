@@ -245,7 +245,7 @@ void main() {
       _formApp(
         initial: FlightScheduleInput.journey(
           outbound: FlightLeg(
-            flightNumber: 'KE925',
+            flightNumber: 'XX000',
             origin: 'ICN',
             destination: 'AMS',
             originTimeZone: 'Asia/Seoul',
@@ -463,7 +463,7 @@ void main() {
     );
     await tester.enterText(
       find.byKey(const ValueKey('manual-ret-flight')),
-      'KE926',
+      'XX001',
     );
     await tester.enterText(
       find.byKey(const ValueKey('manual-ret-destination')),
@@ -481,7 +481,7 @@ void main() {
     final back = tester.widget<TextField>(
       find.byKey(const ValueKey('manual-ret-flight')),
     );
-    expect(back.controller!.text, 'KE926');
+    expect(back.controller!.text, 'XX001');
     expect(find.text('ICN 시간대 · Asia/Seoul'), findsWidgets);
     expect(find.text('AMS 시간대 · Europe/Amsterdam'), findsWidgets);
   });
