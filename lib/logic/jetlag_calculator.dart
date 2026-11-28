@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/bunk_shift.dart';
 import '../models/crew_log.dart';
 import '../models/flight_leg.dart';
 import '../models/guide_event.dart';
@@ -63,6 +64,7 @@ class JetLagCalculator {
     List<SleepLog> sleepLogs = const [],
     FlightLeg? outbound,
     FlightLeg? returning,
+    BunkShift? bunkShift,
   }) {
     final nowUtc = now.toUtc();
     final utcLogs = [
@@ -85,6 +87,7 @@ class JetLagCalculator {
         homeBaseTimezone: homeBaseTimezone,
         outbound: outbound,
         returning: returning,
+        bunkShift: bunkShift,
       );
     } catch (error, stack) {
       debugPrint('JetLagCalculator fallback: $error\n$stack');
@@ -99,6 +102,7 @@ class JetLagCalculator {
           homeBaseTimezone: kJetlagFallbackHomeBase,
           outbound: outbound,
           returning: returning,
+          bunkShift: bunkShift,
         );
       } catch (fallbackError, fallbackStack) {
         debugPrint(
@@ -119,6 +123,7 @@ class JetLagCalculator {
     required String homeBaseTimezone,
     FlightLeg? outbound,
     FlightLeg? returning,
+    BunkShift? bunkShift,
   }) {
     final nowUtc = now.toUtc();
     final home = resolveHomeBaseTimezone(homeBaseTimezone);
@@ -152,6 +157,7 @@ class JetLagCalculator {
       sleepLogs: utcSleep,
       outbound: outbound,
       returning: returning,
+      bunkShift: bunkShift,
     );
     assert(
       events.every(
@@ -181,6 +187,9 @@ class JetLagCalculator {
         lifestyle: lifestyle,
         settings: normalized,
         sleepLogs: utcSleep,
+        outbound: outbound,
+        returning: returning,
+        bunkShift: bunkShift,
       ),
     );
   }

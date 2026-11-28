@@ -20,6 +20,7 @@ class GuideEvent {
     required this.title,
     required this.detail,
     this.missing = false,
+    this.inflightMissedNight = false,
   }) : startUtc = startUtc.toUtc(),
        endUtc = endUtc?.toUtc();
 
@@ -33,5 +34,13 @@ class GuideEvent {
   /// The instant was not injected. The row stays visible as a placeholder.
   final bool missing;
 
+  /// Inflight only: true when the window is the nearest cruise slice.
+  final bool inflightMissedNight;
+
   bool get isSpan => endUtc != null;
+
+  /// Planned wake for the alarm UI. Set only for planned sleep with an end.
+  /// Recorded sleep never exposes a wake here.
+  DateTime? get alarmWakeUtc =>
+      kind == GuideEventKind.sleep ? endUtc : null;
 }

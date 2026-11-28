@@ -5,7 +5,9 @@ import '../logic/jetlag_clock.dart';
 import '../models/bunk_shift.dart';
 import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
+import '../models/lifestyle.dart';
 import '../models/sleep_log.dart';
+import '../models/user_settings.dart';
 import '../theme/jetlag_theme.dart';
 import 'bunk_selection_card.dart';
 import 'guide_event_card.dart';
@@ -24,6 +26,8 @@ class StickyTimeline extends StatelessWidget {
     required this.onBunk,
     required this.onDismissLog,
     this.onEditLoggedSleep,
+    this.lifestyle = JetlagLifestyle.kstAnchor,
+    this.settings = UserSettings.defaults,
   });
 
   final Widget header;
@@ -36,6 +40,8 @@ class StickyTimeline extends StatelessWidget {
 
   /// Called with the sleep log id when a recorded sleep block is tapped.
   final ValueChanged<String>? onEditLoggedSleep;
+  final JetlagLifestyle lifestyle;
+  final UserSettings settings;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +89,8 @@ class StickyTimeline extends StatelessWidget {
         plan: overlap.overlap.plan,
         logs: overlap.overlap.logs,
         iana: schedule.localTimeZone,
+        localTag: schedule.stationLabel,
+        homeIana: schedule.referenceTimeZone,
         onEditLoggedSleep: onEditLoggedSleep,
       ),
       LogMarker log => InlineLogChip(
@@ -96,6 +104,8 @@ class StickyTimeline extends StatelessWidget {
         role: role,
         selected: bunkShift,
         onSelected: onBunk,
+        lifestyle: lifestyle,
+        settings: settings,
       ),
     };
     final dimmed = switch (marker) {
@@ -123,6 +133,9 @@ class StickyTimeline extends StatelessWidget {
       event: marker.event,
       localClock: clocks.local,
       supportingClock: clocks.supporting,
+      localIana: schedule.localTimeZone,
+      localTag: schedule.stationLabel,
+      homeIana: schedule.referenceTimeZone,
       onTap: logId == null || onEditLoggedSleep == null
           ? null
           : () => onEditLoggedSleep!(logId),

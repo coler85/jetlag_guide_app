@@ -26,12 +26,27 @@ String formatHm(DateTime utc, String iana) {
   return '$hour:$minute';
 }
 
-/// Hour and minute of an absolute instant on the UTC clock.
+/// Hour and minute of an absolute instant on the UTC clock (digits only).
 String formatUtcHm(DateTime instant) {
   final utc = instant.toUtc();
   final hour = utc.hour.toString().padLeft(2, '0');
   final minute = utc.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
+}
+
+/// Single UTC clock with a trailing Z, for example `13:30Z`.
+///
+/// Does not append another Z when [formatUtcHm] already ends with one.
+String formatUtcClock(DateTime instant) {
+  final hm = formatUtcHm(instant);
+  return hm.endsWith('Z') ? hm : '${hm}Z';
+}
+
+/// UTC span with Z on both ends, for example `08:35Z - 15:35Z`.
+String formatUtcSpan(DateTime startUtc, DateTime? endUtc) {
+  final start = formatUtcClock(startUtc);
+  if (endUtc == null) return start;
+  return '$start - ${formatUtcClock(endUtc)}';
 }
 
 String _span(
@@ -42,6 +57,11 @@ String _span(
   final start = one(startUtc.toUtc());
   if (endUtc == null) return start;
   return '$start - ${one(endUtc.toUtc())}';
+}
+
+bool _isUtcZone(String iana) {
+  final id = iana.trim();
+  return id == 'UTC' || id == 'Etc/UTC';
 }
 
 /// Local wall time as the primary line, with home base and UTC underneath.
@@ -64,11 +84,11 @@ TripleClockText formatTripleClock({
 }) {
   final localSpan = _span(startUtc, endUtc, (utc) => formatHm(utc, localIana));
   final homeSpan = _span(startUtc, endUtc, (utc) => formatHm(utc, homeIana));
-  final utcSpan = _span(startUtc, endUtc, formatUtcHm);
+  final utcSpan = formatUtcSpan(startUtc, endUtc);
   final homeAbbr = zoneAbbreviation(startUtc.toUtc(), homeIana);
   return TripleClockText(
     local: '$localSpan ($localTag)',
-    supporting: '$homeSpan $homeAbbr · ${utcSpan}Z',
+    supporting: '$homeSpan $homeAbbr · $utcSpan',
   );
 }
 
@@ -83,7 +103,7 @@ String formatCockpitLine({
   final local = '${formatHm(utc, localIana)} $stationLabel (Local)';
   final home =
       '${formatHm(utc, homeIana)} ${zoneAbbreviation(utc, homeIana)} (Home)';
-  final zulu = '${formatUtcHm(utc)}Z (UTC)';
+  final zulu = '${formatUtcClock(utc)} (UTC)';
   return '$local  |  $home  |  $zulu';
 }
 
@@ -92,7 +112,26 @@ String formatHomeAndUtc(DateTime instant, String homeIana) {
   final utc = instant.toUtc();
   final home = formatHm(utc, homeIana);
   final abbr = zoneAbbreviation(utc, homeIana);
-  return '$home $abbr · ${formatUtcHm(utc)}Z';
+  return '$home $abbr · ${formatUtcClock(utc)}';
+}
+
+/// Home-base span only, for example `17:35 - 00:35 KST`.
+/// Used on planned-sleep cards so the alarm home clock can share the row.
+String formatHomeSpan(DateTime startUtc, DateTime? endUtc, String homeIana) {
+  final homeSpan = _span(startUtc, endUtc, (utc) => formatHm(utc, homeIana));
+  final homeAbbr = zoneAbbreviation(startUtc.toUtc(), homeIana);
+  return '$homeSpan $homeAbbr';
+}
+
+/// Local wake for the sleep-card alarm, for example `16:35 (AMS)`.
+String formatAlarmLocal(DateTime wakeUtc, String localIana, String localTag) {
+  return '${formatHm(wakeUtc, localIana)} ($localTag)';
+}
+
+/// Home wake for the sleep-card alarm, for example `00:35 KST`.
+String formatAlarmHome(DateTime wakeUtc, String homeIana) {
+  final utc = wakeUtc.toUtc();
+  return '${formatHm(utc, homeIana)} ${zoneAbbreviation(utc, homeIana)}';
 }
 
 /// Abbreviation reported by the timezone database at [utc].
@@ -109,6 +148,11 @@ String zoneAbbreviation(DateTime utc, String iana) {
 }
 
 String formatRange(DateTime startUtc, DateTime? endUtc, String iana) {
+  if (_isUtcZone(iana)) {
+    final start = formatUtcClock(startUtc);
+    if (endUtc == null) return start;
+    return '$start–${formatUtcClock(endUtc)}';
+  }
   final start = formatHm(startUtc, iana);
   if (endUtc == null) return start;
   return '$start–${formatHm(endUtc, iana)}';

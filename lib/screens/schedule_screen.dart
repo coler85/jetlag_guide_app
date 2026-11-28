@@ -584,11 +584,11 @@ _HeaderCard _legacyCard(JetlagScheduleSnapshot schedule) {
 
 String _localClock(DateTime utc, String zone) {
   final iana = zone.trim();
-  if (iana.isEmpty) return '${formatUtcHm(utc)}Z';
+  if (iana.isEmpty) return formatUtcClock(utc);
   try {
     return '${formatHm(utc, iana)} ${zoneAbbreviation(utc, iana)}';
   } catch (_) {
-    return '${formatUtcHm(utc)}Z';
+    return formatUtcClock(utc);
   }
 }
 

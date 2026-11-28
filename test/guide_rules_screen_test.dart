@@ -44,7 +44,28 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('크루 휴식 배정에 따릅니다.'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-inflight')),
+        matching: find.textContaining('실제 겹친 구간만 보여 주고'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-inflight')),
+        matching: find.textContaining('현지·홈 시간으로 같이'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-inflight')),
+        matching: find.textContaining('기내 벙크 카드 안에 붙고'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('크루 배정에 따릅니다.'), findsOneWidget);
     _expectNoForbiddenWords(tester);
 
     await tester.pageBack();

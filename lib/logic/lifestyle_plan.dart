@@ -98,8 +98,7 @@ List<GuideEvent> lifestyleBlocks({
         detail:
             sleep.detail ??
             (sleep.earlyShowUp
-                ? '${_preDepartureDetail(schedule)} '
-                      '알람 기상 ${formatHm(sleep.endUtc, schedule.referenceTimeZone)}.'
+                ? _preDepartureDetail(schedule)
                 : lifestyle.sleepDetailFor(
                     schedule.referenceTimeZone,
                     hybridMaxShiftHours: settings.hybridMaxShiftHours,

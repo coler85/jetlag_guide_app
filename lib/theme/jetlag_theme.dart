@@ -16,6 +16,8 @@ class JetlagTheme {
   static const textTertiary = Color(0xFF5F6368);
   static const duty = Color(0xFF4A90E2);
   static const sleep = Color(0xFF8A7CFF);
+  /// Softer than [sleep] so inflight rest does not read as a planned sleep.
+  static const inflight = Color(0xFF5C5478);
   static const loggedSleep = Color(0xFF2EC4B6);
   static const caffeine = Color(0xFFF5A623);
   static const meal = Color(0xFF50E3C2);
@@ -221,7 +223,7 @@ class JetlagTheme {
       case GuideEventKind.departure:
         return duty;
       case GuideEventKind.inflight:
-        return sleep;
+        return inflight;
     }
   }
 

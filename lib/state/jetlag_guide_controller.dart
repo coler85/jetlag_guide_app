@@ -444,6 +444,7 @@ class JetlagGuideController extends ChangeNotifier {
         homeBaseTimezone: _home.homeBaseTimezone,
         outbound: journey?.outbound,
         returning: journey?.returning,
+        bunkShift: bunkShift,
       );
     } catch (error, stack) {
       debugPrint('jetlag timeline fallback: $error\n$stack');

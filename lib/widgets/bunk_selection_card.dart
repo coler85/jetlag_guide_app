@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../logic/bunk_plan.dart';
 import '../models/bunk_shift.dart';
 import '../models/jetlag_schedule.dart';
+import '../models/lifestyle.dart';
+import '../models/user_settings.dart';
 import '../theme/jetlag_theme.dart';
 
 /// Shift picker. Choosing a slot expands that slot's rest timeline.
@@ -13,12 +15,16 @@ class BunkSelectionCard extends StatefulWidget {
     required this.role,
     required this.selected,
     required this.onSelected,
+    this.lifestyle = JetlagLifestyle.kstAnchor,
+    this.settings = UserSettings.defaults,
   });
 
   final JetlagScheduleSnapshot schedule;
   final JetlagCrewRole role;
   final BunkShift? selected;
   final ValueChanged<BunkShift> onSelected;
+  final JetlagLifestyle lifestyle;
+  final UserSettings settings;
 
   @override
   State<BunkSelectionCard> createState() => _BunkSelectionCardState();
@@ -44,6 +50,31 @@ class _BunkSelectionCardState extends State<BunkSelectionCard> {
     if (!open && _tile.isExpanded) _tile.collapse();
   }
 
+  BunkBodyClockOverlap? _bodyClockOverlap() {
+    if (widget.selected == null) return null;
+    final schedule = widget.schedule;
+    // Same STD / block / zones as the layover-leaving timeline inflight card.
+    return bunkBodyClockOverlap(
+      schedule: schedule,
+      shift: widget.selected!,
+      lifestyle: widget.lifestyle,
+      settings: widget.settings,
+      originZone: schedule.localTimeZone,
+      destinationZone: schedule.referenceTimeZone,
+      homeZone: schedule.referenceTimeZone,
+    );
+  }
+
+  String _bodyClockLine(BunkBodyClockOverlap overlap) {
+    final schedule = widget.schedule;
+    return bunkBodyClockLine(
+      overlap: overlap,
+      localIana: schedule.localTimeZone,
+      localTag: schedule.stationLabel,
+      homeIana: schedule.referenceTimeZone,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final shifts = BunkShift.forRole(widget.role);
@@ -51,6 +82,7 @@ class _BunkSelectionCardState extends State<BunkSelectionCard> {
     final cues = selected == null
         ? const <BunkCue>[]
         : buildBunkPlan(widget.schedule, selected);
+    final bodyClock = _bodyClockOverlap();
     return Material(
       key: const ValueKey('jetlag-bunk-card'),
       color: JetlagTheme.card,
@@ -100,6 +132,34 @@ class _BunkSelectionCardState extends State<BunkSelectionCard> {
                 ),
               ),
             ),
+            if (bodyClock != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                bodyClock.headline,
+                key: const ValueKey('bunk-body-clock-headline'),
+                style: JetlagTheme.title,
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _bodyClockLine(bodyClock),
+                  key: const ValueKey('bunk-body-clock'),
+                  style: JetlagTheme.caption.copyWith(
+                    fontFeatures: JetlagTheme.tabular,
+                  ),
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                bodyClock.supplement,
+                key: const ValueKey('bunk-body-clock-supplement'),
+                style: JetlagTheme.micro,
+              ),
+            ],
             const SizedBox(height: 4),
             ExpansionTile(
               controller: _tile,

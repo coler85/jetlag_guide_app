@@ -39,6 +39,8 @@ class TimelinePage extends StatelessWidget {
       onBunk: controller.selectBunk,
       onDismissLog: (id) => controller.removeLog(id),
       onEditLoggedSleep: (id) => _editSleep(context, id),
+      lifestyle: controller.lifestyle,
+      settings: controller.settings,
     );
     if (!controller.isSampleSchedule) return page;
     return Column(

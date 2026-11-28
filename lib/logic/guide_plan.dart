@@ -1,3 +1,4 @@
+import '../models/bunk_shift.dart';
 import '../models/crew_log.dart';
 import '../models/flight_leg.dart';
 import '../models/guide_event.dart';
@@ -155,6 +156,7 @@ List<GuideEvent> buildGuideEvents(
   List<SleepLog> sleepLogs = const [],
   FlightLeg? outbound,
   FlightLeg? returning,
+  BunkShift? bunkShift,
 }) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
@@ -261,6 +263,7 @@ List<GuideEvent> buildGuideEvents(
       settings: settings,
       outbound: outbound,
       returning: returning,
+      bunkShift: bunkShift,
     ),
   );
   events.sort((a, b) => a.startUtc.compareTo(b.startUtc));
@@ -273,6 +276,7 @@ List<GuideEvent> _inflightEvents(
   required UserSettings settings,
   FlightLeg? outbound,
   FlightLeg? returning,
+  BunkShift? bunkShift,
 }) {
   final legs = <FlightLeg>[
     if (outbound != null && outbound.arrivesAfterDeparture) outbound,
@@ -283,12 +287,27 @@ List<GuideEvent> _inflightEvents(
     if (synthesized != null) legs.add(synthesized);
   }
   final events = <GuideEvent>[];
+  final bunkStd = schedule.stdUtc.toUtc();
   for (final leg in legs) {
+    // Bunk card is tied to the layover-leaving (return) departure. When a
+    // bunk is chosen for that flight, body-clock rest lives in the bunk card.
+    if (bunkShift != null && leg.stdUtc.toUtc().isAtSameMomentAs(bunkStd)) {
+      continue;
+    }
+    // Layover-leaving flight: empty leg zones fall back to the snapshot so the
+    // bunk card and this timeline card share one inflightRestWindow result.
+    final isReturn = leg.stdUtc.toUtc().isAtSameMomentAs(bunkStd);
+    final originZone = leg.originTimeZone.trim().isEmpty && isReturn
+        ? schedule.localTimeZone
+        : leg.originTimeZone;
+    final destinationZone = leg.destinationTimeZone.trim().isEmpty && isReturn
+        ? schedule.referenceTimeZone
+        : leg.destinationTimeZone;
     final window = inflightRestWindow(
       stdUtc: leg.stdUtc,
       staUtc: leg.staUtc,
-      originZone: leg.originTimeZone,
-      destinationZone: leg.destinationTimeZone,
+      originZone: originZone,
+      destinationZone: destinationZone,
       homeZone: schedule.referenceTimeZone,
       lifestyle: lifestyle,
       settings: settings,
@@ -302,6 +321,7 @@ List<GuideEvent> _inflightEvents(
         endUtc: window.endUtc,
         title: '기내 휴식',
         detail: window.detail,
+        inflightMissedNight: window.missedNight,
       ),
     );
   }
@@ -551,6 +571,9 @@ List<TimelineSection> buildTimelineSections({
   JetlagLifestyle lifestyle = JetlagLifestyle.kstAnchor,
   UserSettings settings = UserSettings.defaults,
   List<SleepLog> sleepLogs = const [],
+  FlightLeg? outbound,
+  FlightLeg? returning,
+  BunkShift? bunkShift,
 }) {
   final nowUtc = now.toUtc();
   final events = buildGuideEvents(
@@ -558,6 +581,9 @@ List<TimelineSection> buildTimelineSections({
     lifestyle: lifestyle,
     settings: settings,
     sleepLogs: sleepLogs,
+    outbound: outbound,
+    returning: returning,
+    bunkShift: bunkShift,
   );
   final zone = schedule.localTimeZone;
   final markers = <TimelineMarker>[];

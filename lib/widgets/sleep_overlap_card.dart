@@ -4,6 +4,7 @@ import '../logic/sleep_overlap.dart';
 import '../models/guide_event.dart';
 import '../models/sleep_log.dart';
 import '../theme/jetlag_theme.dart';
+import 'sleep_alarm_times.dart';
 
 /// One card for a planned sleep and the recorded sleep that overlaps it.
 ///
@@ -14,18 +15,32 @@ class SleepOverlapCard extends StatelessWidget {
     required this.plan,
     required this.logs,
     required this.iana,
+    this.localTag = '',
+    this.homeIana,
     this.onEditLoggedSleep,
   });
 
   final GuideEvent plan;
   final List<GuideEvent> logs;
   final String iana;
+
+  /// Station tag for the planned-sleep alarm local clock.
+  final String localTag;
+
+  /// Home zone for the planned-sleep alarm supporting clock.
+  final String? homeIana;
   final ValueChanged<String>? onEditLoggedSleep;
 
   @override
   Widget build(BuildContext context) {
     final planEnd = plan.endUtc;
     if (planEnd == null) return const SizedBox.shrink();
+    final wake = plan.alarmWakeUtc;
+    final homeZone = homeIana;
+    final planStyle = JetlagTheme.body.copyWith(
+      color: JetlagTheme.sleep,
+      fontWeight: FontWeight.w700,
+    );
     return DecoratedBox(
       key: const ValueKey('sleep-overlap-card'),
       decoration: BoxDecoration(
@@ -38,13 +53,33 @@ class SleepOverlapCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              sleepPlanLine(plan.startUtc, planEnd, iana),
-              key: const ValueKey('sleep-overlap-plan'),
-              style: JetlagTheme.body.copyWith(
-                color: JetlagTheme.sleep,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      sleepPlanLine(plan.startUtc, planEnd, iana),
+                      key: const ValueKey('sleep-overlap-plan'),
+                      style: planStyle,
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                  ),
+                ),
+                if (wake != null && homeZone != null && localTag.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  SleepAlarmTimes(
+                    wakeUtc: wake,
+                    localIana: iana,
+                    localTag: localTag,
+                    homeIana: homeZone,
+                    localStyle: planStyle,
+                  ),
+                ],
+              ],
             ),
             for (final log in logs) ...[
               if (log.endUtc != null) ...[

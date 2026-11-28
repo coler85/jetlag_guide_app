@@ -176,7 +176,7 @@ void main() {
       homeIana: 'Asia/Seoul',
     );
     expect(clocks.local, '18:21 - 21:21 (LAX)');
-    expect(clocks.supporting, '11:21 - 14:21 KST · 02:21 - 05:21Z');
+    expect(clocks.supporting, '11:21 - 14:21 KST · 02:21Z - 05:21Z');
     expect(
       formatCockpitLine(
         nowUtc: DateTime.utc(2026, 1, 15, 15, 51),
@@ -185,6 +185,40 @@ void main() {
         stationLabel: 'LAX',
       ),
       '07:51 LAX (Local)  |  00:51 KST (Home)  |  15:51Z (UTC)',
+    );
+  });
+
+  test('UTC clock helpers put Z on a single instant and on both span ends', () {
+    final instant = DateTime.utc(2026, 1, 15, 13, 30);
+    expect(formatUtcHm(instant), '13:30');
+    expect(formatUtcClock(instant), '13:30Z');
+    expect(formatUtcSpan(instant, null), '13:30Z');
+    expect(
+      formatUtcSpan(
+        DateTime.utc(2026, 1, 15, 8, 35),
+        DateTime.utc(2026, 1, 15, 15, 35),
+      ),
+      '08:35Z - 15:35Z',
+    );
+    expect(
+      formatRange(
+        DateTime.utc(2026, 1, 15, 2, 21),
+        DateTime.utc(2026, 1, 15, 5, 21),
+        'UTC',
+      ),
+      '02:21Z–05:21Z',
+    );
+    expect(
+      formatRange(
+        DateTime.utc(2026, 1, 15, 2, 21),
+        DateTime.utc(2026, 1, 15, 5, 21),
+        'Etc/UTC',
+      ),
+      '02:21Z–05:21Z',
+    );
+    expect(
+      formatHomeAndUtc(instant, 'Asia/Seoul'),
+      '22:30 KST · 13:30Z',
     );
   });
 
