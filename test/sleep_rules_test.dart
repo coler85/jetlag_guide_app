@@ -190,11 +190,11 @@ void main() {
     final schedule = _sample();
     final atOneHour = _firstStart(
       schedule,
-      const UserSettings(arrivalToSleep: Duration(hours: 1)),
+      UserSettings.defaults.copyWith(arrivalToSleep: const Duration(hours: 1)),
     );
     final atFourHours = _firstStart(
       schedule,
-      const UserSettings(arrivalToSleep: Duration(hours: 4)),
+      UserSettings.defaults.copyWith(arrivalToSleep: const Duration(hours: 4)),
     );
 
     expect(
@@ -218,23 +218,36 @@ void main() {
         (await store.load()).arrivalToSleep,
         const Duration(hours: 2, minutes: 30),
       );
-
-      await store.save(const UserSettings(arrivalToSleep: Duration(hours: 1)));
-      expect((await store.load()).arrivalToSleep, const Duration(hours: 1));
-
-      await store.save(const UserSettings(arrivalToSleep: Duration(hours: 4)));
-      expect((await store.load()).arrivalToSleep, const Duration(hours: 4));
+      expect((await store.load()).arrivalDeboard, const Duration(minutes: 30));
+      expect((await store.load()).hotelTransfer, const Duration(minutes: 60));
+      expect((await store.load()).afterHotelReady, const Duration(minutes: 60));
 
       await store.save(
-        const UserSettings(arrivalToSleep: Duration(minutes: 20)),
+        UserSettings.defaults.copyWith(arrivalToSleep: const Duration(hours: 1)),
       );
       expect((await store.load()).arrivalToSleep, const Duration(hours: 1));
 
-      await store.save(const UserSettings(arrivalToSleep: Duration(hours: 5)));
+      await store.save(
+        UserSettings.defaults.copyWith(arrivalToSleep: const Duration(hours: 4)),
+      );
       expect((await store.load()).arrivalToSleep, const Duration(hours: 4));
 
       await store.save(
-        const UserSettings(arrivalToSleep: Duration(hours: 2, minutes: 10)),
+        UserSettings.defaults.copyWith(
+          arrivalToSleep: const Duration(minutes: 20),
+        ),
+      );
+      expect((await store.load()).arrivalToSleep, const Duration(hours: 1));
+
+      await store.save(
+        UserSettings.defaults.copyWith(arrivalToSleep: const Duration(hours: 5)),
+      );
+      expect((await store.load()).arrivalToSleep, const Duration(hours: 4));
+
+      await store.save(
+        UserSettings.defaults.copyWith(
+          arrivalToSleep: const Duration(hours: 2, minutes: 10),
+        ),
       );
       expect(
         (await store.load()).arrivalToSleep,
@@ -243,7 +256,7 @@ void main() {
     },
   );
 
-  testWidgets('arrival-to-sleep sits beside commute with its help text', (
+  testWidgets('arrival parts sit beside commute with sum caption', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 1400));
@@ -265,26 +278,31 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('도착 후 잠들기까지'), findsOneWidget);
-    expect(find.text('2시간 30분'), findsOneWidget);
-    expect(find.text('하기, 입국, 호텔 이동, 짐 정리와 잘 준비까지 걸리는 시간'), findsOneWidget);
+    expect(find.text('하기·입국'), findsOneWidget);
+    expect(find.text('호텔 이동'), findsOneWidget);
+    expect(find.text('호텔 도착 후 준비'), findsOneWidget);
+    expect(
+      find.textContaining('램프 도착부터 잠들기까지 합계 2시간 30분'),
+      findsOneWidget,
+    );
     expect(find.textContaining('의학'), findsNothing);
 
     final commute = tester.getTopLeft(
       find.byKey(const ValueKey('settings-commute')),
     );
-    final arrival = tester.getTopLeft(
-      find.byKey(const ValueKey('settings-arrival-to-sleep')),
+    final deboard = tester.getTopLeft(
+      find.byKey(const ValueKey('settings-arrival-deboard')),
     );
-    expect(arrival.dy, greaterThan(commute.dy));
+    expect(deboard.dy, greaterThan(commute.dy));
 
     await tester.tap(
       find.descendant(
-        of: find.byKey(const ValueKey('settings-arrival-to-sleep')),
+        of: find.byKey(const ValueKey('settings-after-hotel')),
         matching: find.byIcon(Icons.add_circle_outline),
       ),
     );
     await tester.pump();
+    expect(settings.afterHotelReady, const Duration(minutes: 75));
     expect(settings.arrivalToSleep, const Duration(hours: 2, minutes: 45));
   });
 

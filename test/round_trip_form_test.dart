@@ -363,13 +363,15 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: StatefulBuilder(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
             builder: (context, setState) {
               return UserSettingsForm(
                 settings: settings,
                 onChanged: (next) => setState(() => settings = next),
               );
             },
+            ),
           ),
         ),
       ),
@@ -381,6 +383,7 @@ void main() {
     expect(find.textContaining('권장'), findsNothing);
     expect(find.textContaining('필요'), findsNothing);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-sleep-target')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('settings-sleep-target')),
@@ -392,6 +395,7 @@ void main() {
     expect(find.text('7시간 30분'), findsOneWidget);
     expect(settings.sleepTarget, const Duration(hours: 7, minutes: 30));
 
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-sleep-target')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('settings-sleep-target')),
@@ -409,13 +413,15 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: StatefulBuilder(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
             builder: (context, setState) {
               return UserSettingsForm(
                 settings: settings,
                 onChanged: (next) => setState(() => settings = next),
               );
             },
+            ),
           ),
         ),
       ),
@@ -425,6 +431,7 @@ void main() {
     expect(find.text('홈베이스 쇼업 (출발 95분 전)'), findsOneWidget);
     expect(find.text('95분'), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-home-showup')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('settings-home-showup')),
@@ -436,6 +443,7 @@ void main() {
     expect(find.text('홈베이스 쇼업 (출발 100분 전)'), findsOneWidget);
     expect(settings.homeShowupLead, const Duration(minutes: 100));
 
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-home-showup')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('settings-home-showup')),

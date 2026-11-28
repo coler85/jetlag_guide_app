@@ -1,7 +1,9 @@
+import '../models/arrival_order.dart';
 import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
 import '../models/user_settings.dart';
+import 'home_base_timezone.dart';
 import 'home_departure.dart';
 import 'hybrid_strategy.dart';
 import 'jetlag_clock.dart';
@@ -23,10 +25,14 @@ class _SleepWindow {
 
 /// Sleep, caffeine, meal, and light blocks for the selected lifestyle.
 /// Arrival, pickup, and departure stay on the injected schedule.
+///
+/// [inboundStdUtc] is the departing instant of the inbound leg. When null,
+/// overnight-flight naps are not added.
 List<GuideEvent> lifestyleBlocks({
   required JetlagScheduleSnapshot schedule,
   required JetlagLifestyle lifestyle,
   UserSettings settings = UserSettings.defaults,
+  DateTime? inboundStdUtc,
 }) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
@@ -34,7 +40,12 @@ List<GuideEvent> lifestyleBlocks({
 
   final windows = _sleepWindows(schedule, lifestyle, settings);
   final seeded = windows.isEmpty
-      ? _firstSleepAfterArrival(schedule, lifestyle, settings)
+      ? _firstSleepAfterArrival(
+          schedule,
+          lifestyle,
+          settings,
+          inboundStdUtc: inboundStdUtc,
+        )
       : windows;
   final prepared = _withPreDepartureSleep(
     schedule,
@@ -47,15 +58,30 @@ List<GuideEvent> lifestyleBlocks({
     cleared = _clearDutyOverlap(
       schedule,
       settings,
-      _firstSleepAfterArrival(schedule, lifestyle, settings),
+      _firstSleepAfterArrival(
+        schedule,
+        lifestyle,
+        settings,
+        inboundStdUtc: inboundStdUtc,
+      ),
     );
   }
-  final sleeps = _mergeCloseSleeps(
+  var sleeps = _mergeCloseSleeps(
     cleared,
     floor: sta.add(settings.arrivalToSleep),
     target: settings.sleepTarget,
     std: std,
   );
+  sleeps = _withOvernightNap(
+    schedule,
+    lifestyle,
+    settings,
+    sleeps,
+    inboundStdUtc: inboundStdUtc,
+  );
+  final arrivalSleep = _immediateArrivalSleep(sleeps, sta, settings);
+  final westboundSleep = _lastSleepBeforeDeparture(sleeps, std);
+  final appendWestbound = _shouldAppendWestboundEveningNote(schedule, lifestyle);
   final blocks = <GuideEvent>[];
   for (var index = 0; index < sleeps.length; index++) {
     final sleep = sleeps[index];
@@ -74,19 +100,33 @@ List<GuideEvent> lifestyleBlocks({
         ),
       );
     }
-    final dinner = sleep.startUtc.subtract(kMealLead);
-    if (!dinner.isBefore(sta) &&
-        dinner.isBefore(sleep.startUtc) &&
-        !_insideSleep(dinner, sleeps)) {
-      blocks.add(
-        GuideEvent(
-          id: 'meal-${dinner.microsecondsSinceEpoch}',
-          kind: GuideEventKind.meal,
-          startUtc: dinner,
-          title: '식사',
-          detail: '잠들기 전 식사.',
-        ),
-      );
+    final isArrival = identical(sleep, arrivalSleep) ||
+        (arrivalSleep != null &&
+            sleep.startUtc == arrivalSleep.startUtc &&
+            sleep.endUtc == arrivalSleep.endUtc);
+    blocks.addAll(
+      _arrivalAwareMeals(
+        sleep: sleep,
+        next: next,
+        sta: sta,
+        std: std,
+        sleeps: sleeps,
+        settings: settings,
+        isArrivalSleep: isArrival,
+      ),
+    );
+    var detail = sleep.detail ??
+        (sleep.earlyShowUp
+            ? _preDepartureDetail(schedule)
+            : lifestyle.sleepDetailFor(
+                schedule.referenceTimeZone,
+                hybridMaxShiftHours: settings.hybridMaxShiftHours,
+              ));
+    if (appendWestbound &&
+        westboundSleep != null &&
+        sleep.startUtc == westboundSleep.startUtc &&
+        sleep.endUtc == westboundSleep.endUtc) {
+      detail = '$detail ${_westboundEveningNote(schedule)}';
     }
     blocks.add(
       GuideEvent(
@@ -95,20 +135,295 @@ List<GuideEvent> lifestyleBlocks({
         startUtc: sleep.startUtc,
         endUtc: sleep.endUtc,
         title: '수면',
-        detail:
-            sleep.detail ??
-            (sleep.earlyShowUp
-                ? _preDepartureDetail(schedule)
-                : lifestyle.sleepDetailFor(
-                    schedule.referenceTimeZone,
-                    hybridMaxShiftHours: settings.hybridMaxShiftHours,
-                  )),
+        detail: detail,
       ),
     );
     final light = _lightAfterSleep(sleep, next, sta, std);
     if (light != null) blocks.add(light);
   }
   return blocks;
+}
+
+/// First sleep that starts after hotel arrival and within [kArrivalSleepSoon].
+_SleepWindow? _immediateArrivalSleep(
+  List<_SleepWindow> sleeps,
+  DateTime sta,
+  UserSettings settings,
+) {
+  final hotel = settings.hotelArrivalUtc(sta);
+  final sorted = [...sleeps]..sort((a, b) => a.startUtc.compareTo(b.startUtc));
+  for (final sleep in sorted) {
+    if (!sleep.startUtc.isAfter(hotel)) continue;
+    if (sleep.startUtc.difference(hotel) <= kArrivalSleepSoon) return sleep;
+  }
+  return null;
+}
+
+_SleepWindow? _lastSleepBeforeDeparture(
+  List<_SleepWindow> sleeps,
+  DateTime std,
+) {
+  _SleepWindow? last;
+  for (final sleep in sleeps) {
+    if (!sleep.endUtc.isBefore(std)) continue;
+    if (last == null || sleep.endUtc.isAfter(last.endUtc)) last = sleep;
+  }
+  return last;
+}
+
+List<GuideEvent> _arrivalAwareMeals({
+  required _SleepWindow sleep,
+  required _SleepWindow? next,
+  required DateTime sta,
+  required DateTime std,
+  required List<_SleepWindow> sleeps,
+  required UserSettings settings,
+  required bool isArrivalSleep,
+}) {
+  if (!isArrivalSleep) {
+    return _preSleepMeal(sleep: sleep, sta: sta, std: std, sleeps: sleeps);
+  }
+
+  final mealReady = settings.hotelArrivalUtc(sta);
+  final gap = sleep.startUtc.difference(mealReady);
+  final order = settings.arrivalOrder;
+  final restFirstStyle =
+      order == ArrivalOrder.restFirst ||
+      (order != ArrivalOrder.mealFirst && gap < kMealLead);
+
+  if (order == ArrivalOrder.mealFirst && gap < kMealLead) {
+    return _mealBeforeSleep(
+      at: mealReady,
+      sta: sta,
+      std: std,
+      sleeps: sleeps,
+      sleep: sleep,
+      title: '식사',
+      detail: '가볍게 먹고 바로 쉬어요.',
+      idPrefix: 'meal',
+    );
+  }
+
+  if (restFirstStyle) {
+    final events = <GuideEvent>[
+      ..._mealBeforeSleep(
+        at: mealReady,
+        sta: sta,
+        std: std,
+        sleeps: sleeps,
+        sleep: sleep,
+        title: '간식',
+        detail: '배고프면 가볍게만 먹고 쉬어요. 식사는 일어난 뒤에 해요.',
+        idPrefix: 'snack',
+      ),
+    ];
+    final wakeMeal = sleep.endUtc;
+    final nextQuiet = next?.startUtc.subtract(kMealLead);
+    final wakeOk = wakeMeal.isBefore(std) &&
+        (nextQuiet == null || wakeMeal.isBefore(nextQuiet)) &&
+        !wakeMeal.isBefore(sta) &&
+        !_insideSleep(wakeMeal, sleeps);
+    if (wakeOk) {
+      events.add(
+        GuideEvent(
+          id: 'meal-${wakeMeal.microsecondsSinceEpoch}',
+          kind: GuideEventKind.meal,
+          startUtc: wakeMeal,
+          title: '식사',
+          detail: '일어난 뒤 먹어요.',
+        ),
+      );
+    }
+    return events;
+  }
+
+  return _preSleepMeal(sleep: sleep, sta: sta, std: std, sleeps: sleeps);
+}
+
+List<GuideEvent> _preSleepMeal({
+  required _SleepWindow sleep,
+  required DateTime sta,
+  required DateTime std,
+  required List<_SleepWindow> sleeps,
+}) {
+  return _mealBeforeSleep(
+    at: sleep.startUtc.subtract(kMealLead),
+    sta: sta,
+    std: std,
+    sleeps: sleeps,
+    sleep: sleep,
+    title: '식사',
+    detail: '잠들기 전 식사.',
+    idPrefix: 'meal',
+  );
+}
+
+List<GuideEvent> _mealBeforeSleep({
+  required DateTime at,
+  required DateTime sta,
+  required DateTime std,
+  required List<_SleepWindow> sleeps,
+  required _SleepWindow sleep,
+  required String title,
+  required String detail,
+  required String idPrefix,
+}) {
+  if (at.isBefore(sta) || !at.isBefore(std)) return const [];
+  if (!at.isBefore(sleep.startUtc)) return const [];
+  if (_insideSleep(at, sleeps)) return const [];
+  return [
+    GuideEvent(
+      id: '$idPrefix-${at.microsecondsSinceEpoch}',
+      kind: GuideEventKind.meal,
+      startUtc: at,
+      title: title,
+      detail: detail,
+    ),
+  ];
+}
+
+/// Westbound when the folded (home − local) offset is negative.
+///
+/// Fold into (−12h, +12h]. Example: Seoul (+9) vs LA (−8) → +17 → −7.
+bool isWestboundOffset({
+  required DateTime at,
+  required String homeZone,
+  required String localZone,
+}) {
+  final raw = wallClock(at, homeZone).timeZoneOffset -
+      wallClock(at, localZone).timeZoneOffset;
+  return _foldHalfDay(raw).isNegative;
+}
+
+Duration _foldHalfDay(Duration offset) {
+  var minutes = offset.inMinutes % (24 * 60);
+  if (minutes < 0) minutes += 24 * 60;
+  if (minutes > 12 * 60) minutes -= 24 * 60;
+  return Duration(minutes: minutes);
+}
+
+bool _shouldAppendWestboundEveningNote(
+  JetlagScheduleSnapshot schedule,
+  JetlagLifestyle lifestyle,
+) {
+  if (lifestyle != JetlagLifestyle.kstAnchor) return false;
+  final std = schedule.stdUtc.toUtc();
+  final local = wallClock(std, schedule.localTimeZone);
+  if (local.hour < kEveningDepartureStart) return false;
+  return isWestboundOffset(
+    at: std,
+    homeZone: schedule.referenceTimeZone,
+    localZone: schedule.localTimeZone,
+  );
+}
+
+String _westboundEveningNote(JetlagScheduleSnapshot schedule) {
+  final home = homeClockName(schedule.referenceTimeZone);
+  return '저녁에 서쪽으로 떠나는 편이에요. $home을 그대로 두는 날이라 출발 전 수면이 특히 중요해요.';
+}
+
+const _overnightNapDetail =
+    '밤샘 비행 뒤 짧은 낮잠이에요. 밤 수면 전에 끝나게 잡았어요.';
+
+/// Nap cycles that fit before [nightBed] − [kNapGapBeforeNight], capped by
+/// [maxCycles].
+int napCycleCount({
+  required DateTime ready,
+  required DateTime nightBed,
+  required int maxCycles,
+}) {
+  final latestEnd = nightBed.subtract(kNapGapBeforeNight);
+  if (!latestEnd.isAfter(ready)) return 0;
+  final byWindow = latestEnd.difference(ready).inMinutes ~/ kSleepCycle.inMinutes;
+  final capped = byWindow < maxCycles ? byWindow : maxCycles;
+  return capped < 1 ? 0 : capped;
+}
+
+bool _isOvernightFlight(
+  DateTime inboundStd,
+  DateTime sta,
+  _ModeClock clock,
+) {
+  if (!sta.isAfter(inboundStd)) return false;
+  var total = Duration.zero;
+  final wall = wallClock(inboundStd, clock.zone);
+  final origin = DateTime(wall.year, wall.month, wall.day);
+  final endWall = wallClock(sta, clock.zone);
+  final last = DateTime(endWall.year, endWall.month, endWall.day);
+  for (
+    var day = DateTime(origin.year, origin.month, origin.day - 1);
+    !day.isAfter(DateTime(last.year, last.month, last.day + 1));
+    day = DateTime(day.year, day.month, day.day + 1)
+  ) {
+    final night = clock.nightOn(day);
+    final overlapStart =
+        inboundStd.isAfter(night.bed) ? inboundStd : night.bed;
+    final overlapEnd = sta.isBefore(night.wake) ? sta : night.wake;
+    if (overlapEnd.isAfter(overlapStart)) {
+      total += overlapEnd.difference(overlapStart);
+    }
+  }
+  return total >= kOvernightFlightMin;
+}
+
+List<_SleepWindow> _withOvernightNap(
+  JetlagScheduleSnapshot schedule,
+  JetlagLifestyle lifestyle,
+  UserSettings settings,
+  List<_SleepWindow> sleeps, {
+  DateTime? inboundStdUtc,
+}) {
+  if (inboundStdUtc == null) return sleeps;
+  final sta = schedule.staUtc.toUtc();
+  final std = schedule.stdUtc.toUtc();
+  final clock = _modeClock(schedule, lifestyle, settings);
+  final inbound = inboundStdUtc.toUtc();
+  if (!_isOvernightFlight(inbound, sta, clock)) return sleeps;
+  if (_inModeNight(sta, clock)) return sleeps;
+
+  final ready = sta.add(settings.arrivalToSleep);
+  if (!ready.isBefore(std) || ready.isBefore(sta)) return sleeps;
+  final upcoming = _upcomingModeBed(clock, sta);
+  if (upcoming == null) return sleeps;
+  final cycles = napCycleCount(
+    ready: ready,
+    nightBed: upcoming,
+    maxCycles: kNapMaxCycles,
+  );
+  if (cycles < 1) return sleeps;
+  final napEnd = ready.add(
+    Duration(minutes: kSleepCycle.inMinutes * cycles),
+  );
+  if (!napEnd.isAfter(ready) || napEnd.isAfter(upcoming)) return sleeps;
+  final nap = _SleepWindow(
+    startUtc: ready,
+    endUtc: napEnd,
+    detail: _overnightNapDetail,
+  );
+  if (sleeps.any(
+    (sleep) => _rangesOverlap(
+      sleep.startUtc,
+      sleep.endUtc,
+      nap.startUtc,
+      nap.endUtc,
+    ),
+  )) {
+    return sleeps;
+  }
+  final next = [...sleeps, nap]..sort((a, b) => a.startUtc.compareTo(b.startUtc));
+  return next;
+}
+
+DateTime? _upcomingModeBed(_ModeClock clock, DateTime sta) {
+  final wall = wallClock(sta, clock.zone);
+  final origin = DateTime(wall.year, wall.month, wall.day);
+  for (var delta = 0; delta <= 4; delta++) {
+    final night = clock.nightOn(
+      DateTime(origin.year, origin.month, origin.day + delta),
+    );
+    if (!night.bed.isBefore(sta)) return night.bed;
+  }
+  return null;
 }
 
 /// Light only after sleep. A block that would fall in the two hours before
@@ -572,8 +887,9 @@ _SleepWindow? _cyclesEndingAt({
 List<_SleepWindow> _firstSleepAfterArrival(
   JetlagScheduleSnapshot schedule,
   JetlagLifestyle lifestyle,
-  UserSettings settings,
-) {
+  UserSettings settings, {
+  DateTime? inboundStdUtc,
+}) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
   final clock = _modeClock(schedule, lifestyle, settings);
@@ -616,12 +932,28 @@ List<_SleepWindow> _firstSleepAfterArrival(
     (night) => !night.wake.isAfter(sta) && night.wake.isAfter(night.bed),
   );
   if (wokeAlready && sta.isBefore(upcoming.bed)) {
-    final napEnd = ready.add(kSleepCycle);
-    if (!napEnd.isAfter(upcoming.bed) &&
-        napEnd.isAfter(ready) &&
+    final overnight = inboundStdUtc != null &&
+        _isOvernightFlight(inboundStdUtc.toUtc(), sta, clock);
+    final cycles = napCycleCount(
+      ready: ready,
+      nightBed: upcoming.bed,
+      maxCycles: overnight ? kNapMaxCycles : 1,
+    );
+    if (cycles >= 1 &&
         ready.isBefore(std) &&
         !ready.isBefore(sta)) {
-      return [_SleepWindow(startUtc: ready, endUtc: napEnd)];
+      final napEnd = ready.add(
+        Duration(minutes: kSleepCycle.inMinutes * cycles),
+      );
+      if (napEnd.isAfter(ready) && !napEnd.isAfter(upcoming.bed)) {
+        return [
+          _SleepWindow(
+            startUtc: ready,
+            endUtc: napEnd,
+            detail: overnight ? _overnightNapDetail : null,
+          ),
+        ];
+      }
     }
   }
   final night = _cyclesEndingAt(

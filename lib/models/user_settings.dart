@@ -1,3 +1,5 @@
+import 'arrival_order.dart';
+
 /// Clock time on a home-base day, stored without a date or a timezone.
 class DayTime {
   const DayTime({required this.hour, required this.minute});
@@ -35,7 +37,10 @@ class UserSettings {
     this.defaultWakeTime = const DayTime(hour: 7, minute: 0),
     this.prepTime = const Duration(minutes: 45),
     this.commuteTime = const Duration(minutes: 60),
-    this.arrivalToSleep = const Duration(hours: 2, minutes: 30),
+    this.arrivalDeboard = const Duration(minutes: 30),
+    this.hotelTransfer = const Duration(minutes: 60),
+    this.afterHotelReady = const Duration(minutes: 60),
+    this.arrivalOrder = ArrivalOrder.auto,
     this.hybridMaxShiftHours = 3,
     this.homeShowupLead = const Duration(minutes: 95),
     this.chosenSleep = const Duration(hours: 7),
@@ -55,10 +60,17 @@ class UserSettings {
   /// Travel time from home (or the hotel) to the report point.
   final Duration commuteTime;
 
-  /// Time after arrival before the first sleep can start.
-  /// Covers leaving the aircraft, entry, the hotel ride, and getting ready
-  /// for bed. Clamped to 1–4 hours on 15-minute steps.
-  final Duration arrivalToSleep;
+  /// Deboarding and entry after ramp arrival (STA).
+  final Duration arrivalDeboard;
+
+  /// Hotel transfer after deboarding.
+  final Duration hotelTransfer;
+
+  /// Shower and settle time after hotel arrival, before sleep can start.
+  final Duration afterHotelReady;
+
+  /// Meal vs rest order when the first post-arrival sleep sits close to STA.
+  final ArrivalOrder arrivalOrder;
 
   /// Largest circadian move Hybrid mode will apply, in whole hours (1–6).
   final int hybridMaxShiftHours;
@@ -74,6 +86,18 @@ class UserSettings {
   static const maxSleepTarget = Duration(hours: 9);
   static const minArrivalToSleep = Duration(hours: 1);
   static const maxArrivalToSleep = Duration(hours: 4);
+
+  /// Deboard + transfer + after-hotel ready. Same numeric result as the old
+  /// single [arrivalToSleep] setting (default 2 hours 30 minutes).
+  Duration get arrivalToSleep =>
+      arrivalDeboard + hotelTransfer + afterHotelReady;
+
+  /// Deboard + hotel transfer. Meal-ready is STA + this delay.
+  Duration get hotelArrivalDelay => arrivalDeboard + hotelTransfer;
+
+  /// Hotel arrival = ramp arrival (STA) + deboard + transfer.
+  DateTime hotelArrivalUtc(DateTime sta) =>
+      sta.toUtc().add(hotelArrivalDelay);
 
   /// Leave home this long before [showupUtc].
   DateTime departHomeUtc(DateTime showupUtc) {
@@ -123,13 +147,64 @@ class UserSettings {
     return Duration(minutes: snapped.toInt());
   }
 
+  /// Splits a total arrival-to-sleep delay 1:2:2 (deboard:transfer:ready)
+  /// on 15-minute steps so the parts sum exactly to the clamped total.
+  static ({Duration deboard, Duration transfer, Duration ready})
+  splitArrivalToSleep(Duration total) {
+    final minutes = clampArrivalToSleep(total).inMinutes;
+    var deboard = _snapArrivalMinutes((minutes / 5).round());
+    var transfer = _snapArrivalMinutes((minutes * 2 / 5).round());
+    if (deboard + transfer > minutes) {
+      transfer = (minutes - deboard) ~/ 15 * 15;
+    }
+    final ready = minutes - deboard - transfer;
+    return (
+      deboard: Duration(minutes: deboard),
+      transfer: Duration(minutes: transfer),
+      ready: Duration(minutes: ready),
+    );
+  }
+
+  /// Clamps one arrival part so the three-part sum stays in 1–4 hours.
+  static Duration clampArrivalPart(
+    Duration part, {
+    required Duration otherA,
+    required Duration otherB,
+  }) {
+    final others = otherA.inMinutes + otherB.inMinutes;
+    final lo = (minArrivalToSleep.inMinutes - others).clamp(0, maxArrivalToSleep.inMinutes);
+    final hi = (maxArrivalToSleep.inMinutes - others).clamp(0, maxArrivalToSleep.inMinutes);
+    final low = lo <= hi ? lo : hi;
+    final high = lo <= hi ? hi : lo;
+    final snapped = _snapArrivalMinutes(part.inMinutes).clamp(low, high);
+    return Duration(minutes: snapped.toInt());
+  }
+
+  static int _snapArrivalMinutes(int minutes) {
+    final clamped = minutes.clamp(0, maxArrivalToSleep.inMinutes);
+    return ((clamped / 15).round() * 15).clamp(0, maxArrivalToSleep.inMinutes);
+  }
+
   UserSettings normalized() {
+    var deboard = Duration(minutes: _snapArrivalMinutes(arrivalDeboard.inMinutes));
+    var transfer = Duration(minutes: _snapArrivalMinutes(hotelTransfer.inMinutes));
+    var ready = Duration(minutes: _snapArrivalMinutes(afterHotelReady.inMinutes));
+    final sum = deboard.inMinutes + transfer.inMinutes + ready.inMinutes;
+    if (sum < minArrivalToSleep.inMinutes || sum > maxArrivalToSleep.inMinutes) {
+      final parts = splitArrivalToSleep(Duration(minutes: sum));
+      deboard = parts.deboard;
+      transfer = parts.transfer;
+      ready = parts.ready;
+    }
     return UserSettings(
       defaultBedTime: defaultBedTime.normalized(),
       defaultWakeTime: defaultWakeTime.normalized(),
       prepTime: Duration(minutes: prepTime.inMinutes.clamp(0, 180)),
       commuteTime: Duration(minutes: commuteTime.inMinutes.clamp(0, 240)),
-      arrivalToSleep: clampArrivalToSleep(arrivalToSleep),
+      arrivalDeboard: deboard,
+      hotelTransfer: transfer,
+      afterHotelReady: ready,
+      arrivalOrder: arrivalOrder,
       hybridMaxShiftHours: hybridMaxShiftHours.clamp(1, 6),
       homeShowupLead: Duration(minutes: homeShowupLead.inMinutes.clamp(0, 240)),
       chosenSleep: clampSleepTarget(chosenSleep),
@@ -141,17 +216,74 @@ class UserSettings {
     DayTime? defaultWakeTime,
     Duration? prepTime,
     Duration? commuteTime,
+    Duration? arrivalDeboard,
+    Duration? hotelTransfer,
+    Duration? afterHotelReady,
     Duration? arrivalToSleep,
+    ArrivalOrder? arrivalOrder,
     int? hybridMaxShiftHours,
     Duration? homeShowupLead,
     Duration? chosenSleep,
   }) {
+    if (arrivalToSleep != null &&
+        arrivalDeboard == null &&
+        hotelTransfer == null &&
+        afterHotelReady == null) {
+      final parts = splitArrivalToSleep(arrivalToSleep);
+      return UserSettings(
+        defaultBedTime: defaultBedTime ?? this.defaultBedTime,
+        defaultWakeTime: defaultWakeTime ?? this.defaultWakeTime,
+        prepTime: prepTime ?? this.prepTime,
+        commuteTime: commuteTime ?? this.commuteTime,
+        arrivalDeboard: parts.deboard,
+        hotelTransfer: parts.transfer,
+        afterHotelReady: parts.ready,
+        arrivalOrder: arrivalOrder ?? this.arrivalOrder,
+        hybridMaxShiftHours: hybridMaxShiftHours ?? this.hybridMaxShiftHours,
+        homeShowupLead: homeShowupLead ?? this.homeShowupLead,
+        chosenSleep: chosenSleep ?? this.chosenSleep,
+      ).normalized();
+    }
+
+    var nextDeboard = arrivalDeboard ?? this.arrivalDeboard;
+    var nextTransfer = hotelTransfer ?? this.hotelTransfer;
+    var nextReady = afterHotelReady ?? this.afterHotelReady;
+
+    if (arrivalDeboard != null &&
+        hotelTransfer == null &&
+        afterHotelReady == null) {
+      nextDeboard = clampArrivalPart(
+        arrivalDeboard,
+        otherA: this.hotelTransfer,
+        otherB: this.afterHotelReady,
+      );
+    } else if (hotelTransfer != null &&
+        arrivalDeboard == null &&
+        afterHotelReady == null) {
+      nextTransfer = clampArrivalPart(
+        hotelTransfer,
+        otherA: this.arrivalDeboard,
+        otherB: this.afterHotelReady,
+      );
+    } else if (afterHotelReady != null &&
+        arrivalDeboard == null &&
+        hotelTransfer == null) {
+      nextReady = clampArrivalPart(
+        afterHotelReady,
+        otherA: this.arrivalDeboard,
+        otherB: this.hotelTransfer,
+      );
+    }
+
     return UserSettings(
       defaultBedTime: defaultBedTime ?? this.defaultBedTime,
       defaultWakeTime: defaultWakeTime ?? this.defaultWakeTime,
       prepTime: prepTime ?? this.prepTime,
       commuteTime: commuteTime ?? this.commuteTime,
-      arrivalToSleep: arrivalToSleep ?? this.arrivalToSleep,
+      arrivalDeboard: nextDeboard,
+      hotelTransfer: nextTransfer,
+      afterHotelReady: nextReady,
+      arrivalOrder: arrivalOrder ?? this.arrivalOrder,
       hybridMaxShiftHours: hybridMaxShiftHours ?? this.hybridMaxShiftHours,
       homeShowupLead: homeShowupLead ?? this.homeShowupLead,
       chosenSleep: chosenSleep ?? this.chosenSleep,
@@ -165,7 +297,10 @@ class UserSettings {
         other.defaultWakeTime == defaultWakeTime &&
         other.prepTime == prepTime &&
         other.commuteTime == commuteTime &&
-        other.arrivalToSleep == arrivalToSleep &&
+        other.arrivalDeboard == arrivalDeboard &&
+        other.hotelTransfer == hotelTransfer &&
+        other.afterHotelReady == afterHotelReady &&
+        other.arrivalOrder == arrivalOrder &&
         other.hybridMaxShiftHours == hybridMaxShiftHours &&
         other.homeShowupLead == homeShowupLead &&
         other.chosenSleep == chosenSleep;
@@ -177,7 +312,10 @@ class UserSettings {
     defaultWakeTime,
     prepTime,
     commuteTime,
-    arrivalToSleep,
+    arrivalDeboard,
+    hotelTransfer,
+    afterHotelReady,
+    arrivalOrder,
     hybridMaxShiftHours,
     homeShowupLead,
     chosenSleep,

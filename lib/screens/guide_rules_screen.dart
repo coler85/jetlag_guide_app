@@ -23,14 +23,26 @@ class GuideRulesScreen extends StatelessWidget {
     final home = homeClockName(homeBaseTimezone);
     final shift = settings.hybridMaxShiftHours;
     final arrival = _durationLabel(settings.arrivalToSleep);
+    final deboard = _durationLabel(settings.arrivalDeboard);
+    final transfer = _durationLabel(settings.hotelTransfer);
+    final afterHotel = _durationLabel(settings.afterHotelReady);
+    final hotelDelay = _durationLabel(settings.hotelArrivalDelay);
     final prep = _durationLabel(settings.prepTime);
     final commute = _durationLabel(settings.commuteTime);
     final target = _durationLabel(settings.sleepTarget);
     final cycle = _durationLabel(kSleepCycle);
     final gap = _durationLabel(kSleepMergeGap);
+    final sleepSoon = _durationLabel(kArrivalSleepSoon);
+    final mealLead = _durationLabel(kMealLead);
+    final napMax = _durationLabel(
+      Duration(minutes: kSleepCycle.inMinutes * kNapMaxCycles),
+    );
+    final napGap = _durationLabel(kNapGapBeforeNight);
+    final overnightMin = _durationLabel(kOvernightFlightMin);
     final inflightCap = _durationLabel(kInflightMaxShift);
     final afterTakeoff = _durationLabel(kInflightAfterTakeoff);
     final beforeLanding = _durationLabel(kInflightBeforeLanding);
+    final orderLabel = settings.arrivalOrder.label;
 
     final sections = <_RuleSection>[
       _RuleSection(
@@ -45,9 +57,18 @@ class GuideRulesScreen extends StatelessWidget {
         key: const ValueKey('guide-rules-arrival'),
         title: '도착 후 첫 수면',
         body:
+            '도착 후 잠들기까지($arrival)는 하기·입국($deboard) + 호텔 이동($transfer) + '
+            '호텔 도착 후 준비($afterHotel)입니다. STA는 램프 도착입니다. '
+            '식사는 호텔 도착(하기+이동, $hotelDelay 뒤) 이후에 두고, '
+            '수면은 그 뒤 준비까지 기다린 뒤에 둡니다. '
             '착륙 후 도착 후 잠들기까지($arrival)가 지난 뒤부터 '
             '모드 기상 시각까지 잠을 둡니다. '
-            '$cycle이 안 되면 다음 취침으로 넘깁니다.',
+            '$cycle이 안 되면 다음 취침으로 넘깁니다. '
+            '호텔 도착 후 $sleepSoon 안에 시작하는 첫 수면은 도착 직후 수면으로 보고, '
+            '도착 후 순서(지금: $orderLabel)로 식사와 수면 사이를 잡습니다. '
+            '호텔 도착과 수면 사이가 $mealLead보다 짧으면 '
+            '자동·먼저 휴식은 간식 뒤 수면·일어난 뒤 식사로, '
+            '먼저 식사는 호텔 도착 식사로 둡니다.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-inflight'),
@@ -70,12 +91,24 @@ class GuideRulesScreen extends StatelessWidget {
             '실제 휴식은 크루 배정에 따릅니다.',
       ),
       _RuleSection(
+        key: const ValueKey('guide-rules-nap'),
+        title: '밤샘 비행 뒤 낮잠',
+        body:
+            '들어오는 편이 모드 밤과 $overnightMin 이상 겹치고 '
+            '도착이 모드 낮이면, 도착 후 잠들기까지 뒤에 '
+            '최대 $napMax($kNapMaxCycles사이클) 낮잠을 둡니다. '
+            '끝은 다음 밤 수면 시작 $napGap 전입니다. '
+            '들어오는 편 출발 시각이 없으면 이 낮잠은 두지 않습니다.',
+      ),
+      _RuleSection(
         key: const ValueKey('guide-rules-departure'),
         title: '출발 전 수면',
         body:
             '픽업이 있으면 픽업에서, 없으면 출발에서 준비($prep)와 이동($commute)을 '
             '빼서 기상 시각을 정합니다. 수면 목표($target) 안에서 $cycle 단위로 채웁니다. '
-            '픽업이 밤·새벽일 때만 잡아요.',
+            '픽업이 밤·새벽일 때만 잡아요. '
+            '$home 유지로 저녁($kEveningDepartureStart시 이후)에 서쪽으로 떠날 때는 '
+            '출발 전 수면 안내에 한 줄을 덧붙입니다.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-gap'),

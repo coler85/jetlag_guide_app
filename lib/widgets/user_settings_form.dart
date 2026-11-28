@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/arrival_order.dart';
 import '../models/user_settings.dart';
 import '../theme/jetlag_theme.dart';
 import 'sleep_log_sheet.dart';
@@ -61,24 +62,72 @@ class UserSettingsForm extends StatelessWidget {
           ),
         ),
         _DurationRow(
-          rowKey: const ValueKey('settings-arrival-to-sleep'),
-          label: '도착 후 잠들기까지',
-          minutes: settings.arrivalToSleep.inMinutes,
-          minMinutes: UserSettings.minArrivalToSleep.inMinutes,
-          maxMinutes: UserSettings.maxArrivalToSleep.inMinutes,
-          valueLabel: _hoursMinutesLabel(settings.arrivalToSleep),
+          rowKey: const ValueKey('settings-arrival-deboard'),
+          label: '하기·입국',
+          minutes: settings.arrivalDeboard.inMinutes,
+          minMinutes: _arrivalPartMin(
+            settings.hotelTransfer,
+            settings.afterHotelReady,
+          ),
+          maxMinutes: _arrivalPartMax(
+            settings.hotelTransfer,
+            settings.afterHotelReady,
+          ),
+          valueLabel: _hoursMinutesLabel(settings.arrivalDeboard),
           valueWidth: 96,
           onChanged: (minutes) => onChanged(
-            settings.copyWith(arrivalToSleep: Duration(minutes: minutes)),
+            settings.copyWith(arrivalDeboard: Duration(minutes: minutes)),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.only(bottom: 4),
+        _DurationRow(
+          rowKey: const ValueKey('settings-hotel-transfer'),
+          label: '호텔 이동',
+          minutes: settings.hotelTransfer.inMinutes,
+          minMinutes: _arrivalPartMin(
+            settings.arrivalDeboard,
+            settings.afterHotelReady,
+          ),
+          maxMinutes: _arrivalPartMax(
+            settings.arrivalDeboard,
+            settings.afterHotelReady,
+          ),
+          valueLabel: _hoursMinutesLabel(settings.hotelTransfer),
+          valueWidth: 96,
+          onChanged: (minutes) => onChanged(
+            settings.copyWith(hotelTransfer: Duration(minutes: minutes)),
+          ),
+        ),
+        _DurationRow(
+          rowKey: const ValueKey('settings-after-hotel'),
+          label: '호텔 도착 후 준비',
+          minutes: settings.afterHotelReady.inMinutes,
+          minMinutes: _arrivalPartMin(
+            settings.arrivalDeboard,
+            settings.hotelTransfer,
+          ),
+          maxMinutes: _arrivalPartMax(
+            settings.arrivalDeboard,
+            settings.hotelTransfer,
+          ),
+          valueLabel: _hoursMinutesLabel(settings.afterHotelReady),
+          valueWidth: 96,
+          onChanged: (minutes) => onChanged(
+            settings.copyWith(afterHotelReady: Duration(minutes: minutes)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            '하기, 입국, 호텔 이동, 짐 정리와 잘 준비까지 걸리는 시간',
-            key: ValueKey('settings-arrival-to-sleep-help'),
+            '램프 도착부터 잠들기까지 합계 ${_hoursMinutesLabel(settings.arrivalToSleep)}. '
+            '식사는 호텔 도착(하기+이동) 뒤에 둘 수 있어요.',
+            key: const ValueKey('settings-arrival-to-sleep'),
             style: JetlagTheme.caption,
           ),
+        ),
+        _ArrivalOrderRow(
+          selected: settings.arrivalOrder,
+          onChanged: (order) =>
+              onChanged(settings.copyWith(arrivalOrder: order)),
         ),
         _DurationRow(
           rowKey: const ValueKey('settings-home-showup'),
@@ -140,8 +189,73 @@ String _hoursMinutesLabel(Duration duration) {
   final minutes = duration.inMinutes;
   final hours = minutes ~/ 60;
   final mins = minutes % 60;
+  if (hours == 0) return '$mins분';
   if (mins == 0) return '$hours시간';
   return '$hours시간 $mins분';
+}
+
+int _arrivalPartMin(Duration otherA, Duration otherB) {
+  final others = otherA.inMinutes + otherB.inMinutes;
+  return (UserSettings.minArrivalToSleep.inMinutes - others).clamp(
+    0,
+    UserSettings.maxArrivalToSleep.inMinutes,
+  );
+}
+
+int _arrivalPartMax(Duration otherA, Duration otherB) {
+  final others = otherA.inMinutes + otherB.inMinutes;
+  return (UserSettings.maxArrivalToSleep.inMinutes - others).clamp(
+    0,
+    UserSettings.maxArrivalToSleep.inMinutes,
+  );
+}
+
+class _ArrivalOrderRow extends StatelessWidget {
+  const _ArrivalOrderRow({required this.selected, required this.onChanged});
+
+  final ArrivalOrder selected;
+  final ValueChanged<ArrivalOrder> onChanged;
+
+  static const _keys = <ArrivalOrder, ValueKey<String>>{
+    ArrivalOrder.auto: ValueKey('settings-arrival-order-auto'),
+    ArrivalOrder.restFirst: ValueKey('settings-arrival-order-rest'),
+    ArrivalOrder.mealFirst: ValueKey('settings-arrival-order-meal'),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: const ValueKey('settings-arrival-order'),
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('도착 후 순서', style: JetlagTheme.body),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final order in ArrivalOrder.values)
+                ChoiceChip(
+                  key: _keys[order],
+                  label: Text(order.label),
+                  selected: selected == order,
+                  onSelected: (_) => onChanged(order),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '도착 후 식사와 수면 사이가 2시간보다 짧을 때 순서를 고릅니다.',
+            style: JetlagTheme.caption,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ClockRow extends StatelessWidget {

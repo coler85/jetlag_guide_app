@@ -198,6 +198,7 @@ List<GuideEvent> buildGuideEvents(
       schedule: schedule,
       lifestyle: lifestyle,
       settings: settings,
+      inboundStdUtc: _inboundStdUtc(schedule, outbound),
     ),
     if (pickup != null)
       GuideEvent(
@@ -326,6 +327,17 @@ List<GuideEvent> _inflightEvents(
     );
   }
   return events;
+}
+
+/// Inbound takeoff when [outbound] lands at the layover STA (±1 minute).
+DateTime? _inboundStdUtc(
+  JetlagScheduleSnapshot schedule,
+  FlightLeg? outbound,
+) {
+  if (outbound == null) return null;
+  final diff = outbound.staUtc.toUtc().difference(schedule.staUtc.toUtc()).abs();
+  if (diff > const Duration(minutes: 1)) return null;
+  return outbound.stdUtc.toUtc();
 }
 
 /// The flight that leaves the layover, when the snapshot has a block.

@@ -35,6 +35,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('잠들기 1~2시간 전까지'), findsOneWidget);
+    expect(find.byKey(const ValueKey('guide-rules-nap')), findsOneWidget);
+    expect(find.textContaining('도착 후 순서'), findsWidgets);
+    expect(find.textContaining('밤샘 비행'), findsOneWidget);
+    expect(find.textContaining('서쪽으로 떠날 때'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('guide-rules-inflight')),
@@ -104,7 +108,7 @@ Future<void> _openRules(WidgetTester tester) async {
 }
 
 Future<void> _tapArrivalPlus(WidgetTester tester) async {
-  final row = find.byKey(const ValueKey('settings-arrival-to-sleep'));
+  final row = find.byKey(const ValueKey('settings-after-hotel'));
   await tester.scrollUntilVisible(row, -400, scrollable: _recordsScrollable);
   await tester.pumpAndSettle();
   await tester.tap(

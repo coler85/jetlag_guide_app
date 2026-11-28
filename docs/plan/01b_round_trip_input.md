@@ -126,7 +126,7 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 
 - 기상은 모드별로 정한다. 한국시간 유지는 홈 취침·기상, 하이브리드는 홈 시각에서 현지 쪽으로 옮긴 시각, 현지 적응은 현지 취침·기상이다.
 - 하이브리드 시프트 상한은 3시간이다. 설정 `hybridMaxShiftHours`의 기본값이며, 화면에서 1~6시간으로 바꿀 수 있다.
-- 도착 후 잠들기까지는 2시간 30분이다. 설정 `arrivalToSleep`의 기본값이며, 1~4시간, 15분 단위다.
+- 도착 후 잠들기까지는 2시간 30분이다. 설정 `arrivalToSleep`(하기·입국 + 호텔 이동 + 호텔 도착 후 준비의 합, 보완 9b에서 세 값으로 풀림)의 기본값이며, 1~4시간, 15분 단위다.
 - 출발 전 수면은 픽업(없으면 출발 − 쇼업 여유)이 그날 모드 밤·새벽에 있을 때만 넣는다. 한국시간 유지는 홈, 하이브리드는 시프트를 적용한 홈, 현지 적응은 현지 시계다. 밤·새벽은 그 모드의 취침~기상(기본 23:00–07:00)이다. 넣을 때의 끝은 픽업 − 준비 − 이동이고, 그 시각에 90분이 안 되면 출발 − 쇼업 여유 − 준비 − 이동이다. 길이는 목표를 넘지 않는 90분 주기다. 해당하지 않으면 그날은 모드 수면만 둔다.
 - 픽업으로 기상을 당기는 것은 그 픽업이 들어 있는 밤만이다.
 - 수면 간격 3시간 미만은 합침. 모든 모드에 같은 기준(`kSleepMergeGap`)을 쓴다. 끝은 뒤쪽 수면의 기상이고, 길이는 목표 안의 90분 주기다. 간격이 3시간 이상이면 두 블록을 두고 그 사이에 식사 블록을 둔다.
@@ -181,3 +181,51 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 
 ### D. 기상 알람
 - 기상 알람은 위젯·시계 구현과 함께 보류.
+
+## 보완 9 (도착 후 순서, 밤샘 비행 뒤 낮잠, 저녁 서행 문구)
+
+상태: ✅ 완료 (커밋 전). 샘플은 XX000/XX001만 쓴다. 보완 9b에서 식사 가능 시점을 호텔 도착으로 바꿈.
+
+### 상수 (`lib/logic/sleep_constants.dart`)
+- `kArrivalSleepSoon` = 6시간: 호텔 도착→첫 수면이 이 안이면 도착 직후 수면.
+- `kNapMaxCycles` = 2 (상한 3시간).
+- `kNapGapBeforeNight` = `kSleepMergeGap`(3시간): 낮잠 끝 ≤ 다음 밤 수면 시작 − 이 값.
+- `kOvernightFlightMin` = 3시간: 비행∩모드 밤이 이 이상이면 밤샘 비행.
+- `kEveningDepartureStart` = 17: 현지 17:00 이상 24:00 미만이 저녁 출발.
+- (제거) `kArrivalMealReady` 고정 1시간 — 보완 9b에서 호텔 도착(하기+이동)으로 대체.
+
+### 설정
+- `ArrivalOrder` { `auto`, `restFirst`, `mealFirst` } 라벨 자동 / 먼저 휴식 / 먼저 식사. 기본 `auto`.
+- `UserSettings.arrivalOrder`. 저장 키 `jetlag_guide_arrival_order`(enum name). 알 수 없거나 없음 → `auto`.
+- 설정 화면 도착 후 시간 세 줄(하기·입국 / 호텔 이동 / 호텔 도착 후 준비) 아래 '도착 후 순서' (`settings-arrival-order`, `-auto`/`-rest`/`-meal`).
+
+### 도착 직후 식사·수면 (`lifestyleBlocks`)
+- 대상: 호텔 도착 이후·시작−호텔 도착 ≤ `kArrivalSleepSoon`인 첫 수면(낮잠 포함) 하나.
+- 호텔 도착 = STA + `hotelArrivalDelay`(하기+이동). 식사 가능 시점 = 호텔 도착.
+- `gap` = 도착 직후 수면 시작 − 호텔 도착.
+- `gap` ≥ `kMealLead`이고 `auto`/`mealFirst`: 수면 − `kMealLead` 식사('잠들기 전 식사.').
+- `gap` < `kMealLead`이거나 `restFirst`: 수면 전 식사 없음. 호텔 도착 간식 + 수면 끝 식사('일어난 뒤 먹어요.'). 수면 끝이 다음 수면−`kMealLead` 이후이거나 STD 이후면 끝 식사 생략.
+- `mealFirst` + `gap` < `kMealLead`: 호텔 도착 식사('가볍게 먹고 바로 쉬어요.'). 수면 시각 불변.
+- 식사·간식 id: `meal-<micros>` / `snack-<micros>`. 카페인·빛 로직 불변.
+
+### 밤샘 비행 뒤 낮잠
+- `lifestyleBlocks(inboundStdUtc:)` — `buildGuideEvents`가 outbound STA≈schedule.STA(±1분)일 때 `outbound.stdUtc` 전달. null이면 밤샘 판정 안 함.
+- 밤샘 = `[inboundStdUtc, STA]` ∩ 모드 밤 ≥ `kOvernightFlightMin`.
+- 도착이 모드 낮이고 밤샘일 때만: 시작 STA+`arrivalToSleep`(호텔 도착+준비), 길이 `min(kNapMaxCycles, …)` 사이클(끝 ≤ 다음 밤 시작 − `kNapGapBeforeNight`). 병합 후 추가. detail: '밤샘 비행 뒤 짧은 낮잠이에요. 밤 수면 전에 끝나게 잡았어요.'
+- `_firstSleepAfterArrival` 낮잠 경로도 같은 `napCycleCount` 헬퍼: 밤샘이면 최대 2, 아니면 1.
+
+### 저녁 서행 + 한국시간 유지 문구
+- 조건: `kstAnchor` + 현지 출발 ∈ [17:00, 24:00) + 서행.
+- 서행 = folded(홈−현지) ∈ (−12h, +12h] 가 0보다 작음(예: 서울+9 vs LA−8 → +17 → −7).
+- STD 전 마지막 수면 detail 뒤에 공백 한 칸으로 이어 붙임. 홈이 서울이 아니면 `homeClockName` 사용.
+
+### 보완 9b (식사 = 호텔 도착, 도착 후 시간 세 값)
+
+경위: 별도 '호텔 도착까지' 설정이 빠졌던 것이 아니다. 2026-11-26 커밋 `01aba7a`의 `arrivalToSleep`(기본 2시간 30분)이 하기·입국·호텔 이동·잘 준비를 한 값으로 묶었다. `commuteTime`(기본 60분)은 집/호텔→보고 지점(출발 쪽)이다. 영후님 확인: 2시간 30분 = 하기 30분 + 호텔 이동 1시간 + 샤워 1시간. 호텔 도착 = 램프(STA) + 1시간 30분. 보완 9가 식사 가능을 고정 `kArrivalMealReady`(STA+1시간)로 둔 것이 문제였다(버스 안일 수 있음).
+
+규칙:
+- 설정 세 값(기본 30/60/60, 15분 단위). `arrivalToSleep` = 합 getter. 총합 1~4시간. 한 항목 변경 시 총합을 넘기면 그 항목 클램프.
+- 헬퍼: `hotelArrivalDelay` = 하기+이동, `hotelArrivalUtc(sta)` = STA+하기+이동. 첫 수면 가능 = 호텔 도착+준비 = STA+`arrivalToSleep`.
+- 저장: 세 키(`jetlag_guide_arrival_deboard_minutes` 등). 없으면 옛 `jetlag_guide_arrival_to_sleep_minutes`를 1:2:2로 15분 단위 분할(150→30/60/60). 총합 키도 세 값 합으로 갱신.
+- 식사·간식·`kArrivalSleepSoon` gap 기준 = 호텔 도착. 낮잠·수면 시작은 STA+`arrivalToSleep` 유지.
+- 계산 화면: STA=램프, 식사=호텔 도착 이후, 수면=준비 뒤. 숫자는 설정값.
