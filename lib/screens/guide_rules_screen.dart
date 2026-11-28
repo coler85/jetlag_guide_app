@@ -20,7 +20,7 @@ class GuideRulesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final home = _homeClockName(homeBaseTimezone);
+    final home = homeClockName(homeBaseTimezone);
     final shift = settings.hybridMaxShiftHours;
     final arrival = _durationLabel(settings.arrivalToSleep);
     final prep = _durationLabel(settings.prepTime);
@@ -28,6 +28,9 @@ class GuideRulesScreen extends StatelessWidget {
     final target = _durationLabel(settings.sleepTarget);
     final cycle = _durationLabel(kSleepCycle);
     final gap = _durationLabel(kSleepMergeGap);
+    final inflightCap = _durationLabel(kInflightMaxShift);
+    final afterTakeoff = _durationLabel(kInflightAfterTakeoff);
+    final beforeLanding = _durationLabel(kInflightBeforeLanding);
 
     final sections = <_RuleSection>[
       _RuleSection(
@@ -45,6 +48,22 @@ class GuideRulesScreen extends StatelessWidget {
             '착륙 후 도착 후 잠들기까지($arrival)가 지난 뒤부터 '
             '모드 기상 시각까지 잠을 둡니다. '
             '$cycle이 안 되면 다음 취침으로 넘깁니다.',
+      ),
+      _RuleSection(
+        key: const ValueKey('guide-rules-inflight'),
+        title: '기내 휴식',
+        body:
+            '탑승 시점의 몸시계 밤을 목적지 쪽으로 옮겨, '
+            '이륙 후 $afterTakeoff부터 착륙 $beforeLanding 전까지와 '
+            '겹치는 구간을 보여 줍니다. '
+            '$home 유지는 옮기지 않습니다. '
+            '하이브리드는 지상 이동 상한(최대 $shift시간, 시차 이내)의 절반을 '
+            '기내에서 먼저 옮깁니다. '
+            '현지 적응은 최대 $inflightCap까지 옮기고, 남은 시차보다 많이 옮기지 않습니다. '
+            '출발편은 $home 밤에서 시작하고, 귀국편은 체류 중 모드가 옮긴 밤을 그대로 씁니다. '
+            '동쪽 비행은 앞당기고 서쪽 비행은 늦춥니다. '
+            '겹치는 시간이 $cycle보다 짧으면 그 밤에 가까운 비행 구간 $cycle을 보여 줍니다. '
+            '실제 휴식은 크루 휴식 배정에 따릅니다.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-departure'),
@@ -114,17 +133,6 @@ class _RuleSection extends StatelessWidget {
       ],
     );
   }
-}
-
-/// "한국시간" only when the saved home base is Seoul. Other bases use their
-/// city name, or the IANA id when the city is not in the catalog.
-String _homeClockName(String iana) {
-  final id = resolveHomeBaseTimezone(iana);
-  if (id == kJetlagFallbackHomeBase) return '한국시간';
-  for (final zone in kHomeBaseZones) {
-    if (zone.id == id) return '${zone.city} 시간';
-  }
-  return id;
 }
 
 String _durationLabel(Duration duration) {

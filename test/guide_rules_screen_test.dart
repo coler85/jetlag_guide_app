@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jetlag_guide_app/logic/sleep_constants.dart';
 import 'package:jetlag_guide_app/main.dart';
 import 'package:jetlag_guide_app/screens/guide_rules_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,6 +35,16 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('잠들기 1~2시간 전까지'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-inflight')),
+        matching: find.textContaining(
+          '최대 ${kInflightMaxShift.inHours}시간까지 옮기고',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('크루 휴식 배정에 따릅니다.'), findsOneWidget);
     _expectNoForbiddenWords(tester);
 
     await tester.pageBack();

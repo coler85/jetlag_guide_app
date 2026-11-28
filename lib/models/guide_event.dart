@@ -8,6 +8,7 @@ enum GuideEventKind {
   pickup,
   showup,
   departure,
+  inflight,
 }
 
 class GuideEvent {

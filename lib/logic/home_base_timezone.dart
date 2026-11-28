@@ -46,6 +46,17 @@ List<HomeBaseZone> homeBaseZoneChoices(String selected) {
   return [HomeBaseZone(id: trimmed, city: trimmed), ...kHomeBaseZones];
 }
 
+/// "한국시간" when the home base is Seoul. Other bases use their city name,
+/// or the IANA id when the city is not in the catalog.
+String homeClockName(String iana) {
+  final id = resolveHomeBaseTimezone(iana);
+  if (id == kJetlagFallbackHomeBase) return '한국시간';
+  for (final zone in kHomeBaseZones) {
+    if (zone.id == id) return '${zone.city} 시간';
+  }
+  return id;
+}
+
 /// Returns [raw] when it is a real IANA zone. Otherwise the Seoul fallback.
 ///
 /// Empty, unknown, and a missing timezone database all land on the fallback

@@ -1,9 +1,11 @@
 import '../models/crew_log.dart';
+import '../models/flight_leg.dart';
 import '../models/guide_event.dart';
 import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
 import '../models/sleep_log.dart';
 import '../models/user_settings.dart';
+import 'inflight_rest.dart';
 import 'jetlag_clock.dart';
 import 'lifestyle_plan.dart';
 import 'sleep_overlap.dart';
@@ -151,6 +153,8 @@ List<GuideEvent> buildGuideEvents(
   JetlagLifestyle lifestyle = JetlagLifestyle.kstAnchor,
   UserSettings settings = UserSettings.defaults,
   List<SleepLog> sleepLogs = const [],
+  FlightLeg? outbound,
+  FlightLeg? returning,
 }) {
   final sta = schedule.staUtc.toUtc();
   final std = schedule.stdUtc.toUtc();
@@ -250,8 +254,76 @@ List<GuideEvent> buildGuideEvents(
       ),
     );
   }
+  events.addAll(
+    _inflightEvents(
+      schedule,
+      lifestyle: lifestyle,
+      settings: settings,
+      outbound: outbound,
+      returning: returning,
+    ),
+  );
   events.sort((a, b) => a.startUtc.compareTo(b.startUtc));
   return events;
+}
+
+List<GuideEvent> _inflightEvents(
+  JetlagScheduleSnapshot schedule, {
+  required JetlagLifestyle lifestyle,
+  required UserSettings settings,
+  FlightLeg? outbound,
+  FlightLeg? returning,
+}) {
+  final legs = <FlightLeg>[
+    if (outbound != null && outbound.arrivesAfterDeparture) outbound,
+    if (returning != null && returning.arrivesAfterDeparture) returning,
+  ];
+  if (legs.isEmpty) {
+    final synthesized = _returnLeg(schedule);
+    if (synthesized != null) legs.add(synthesized);
+  }
+  final events = <GuideEvent>[];
+  for (final leg in legs) {
+    final window = inflightRestWindow(
+      stdUtc: leg.stdUtc,
+      staUtc: leg.staUtc,
+      originZone: leg.originTimeZone,
+      destinationZone: leg.destinationTimeZone,
+      homeZone: schedule.referenceTimeZone,
+      lifestyle: lifestyle,
+      settings: settings,
+    );
+    if (window == null) continue;
+    events.add(
+      GuideEvent(
+        id: 'inflight-${leg.stdUtc.microsecondsSinceEpoch}',
+        kind: GuideEventKind.inflight,
+        startUtc: window.startUtc,
+        endUtc: window.endUtc,
+        title: '기내 휴식',
+        detail: window.detail,
+      ),
+    );
+  }
+  return events;
+}
+
+/// The flight that leaves the layover, when the snapshot has a block.
+FlightLeg? _returnLeg(JetlagScheduleSnapshot schedule) {
+  if (schedule.blockMinutes <= 0) return null;
+  final std = schedule.stdUtc.toUtc();
+  final sta = std.add(Duration(minutes: schedule.blockMinutes));
+  if (!sta.isAfter(std)) return null;
+  if (!std.isAfter(schedule.staUtc.toUtc())) return null;
+  return FlightLeg(
+    flightNumber: schedule.flightNumber,
+    origin: schedule.stationLabel,
+    destination: schedule.originLabel,
+    originTimeZone: schedule.localTimeZone,
+    destinationTimeZone: schedule.referenceTimeZone,
+    std: std,
+    sta: sta,
+  );
 }
 
 CrewLog? openSleepLog(List<CrewLog> logs) {

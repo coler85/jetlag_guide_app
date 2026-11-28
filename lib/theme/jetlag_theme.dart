@@ -220,6 +220,8 @@ class JetlagTheme {
       case GuideEventKind.showup:
       case GuideEventKind.departure:
         return duty;
+      case GuideEventKind.inflight:
+        return sleep;
     }
   }
 
@@ -243,6 +245,8 @@ class JetlagTheme {
         return Icons.badge_outlined;
       case GuideEventKind.departure:
         return Icons.flight_takeoff;
+      case GuideEventKind.inflight:
+        return Icons.airline_seat_flat;
     }
   }
 }

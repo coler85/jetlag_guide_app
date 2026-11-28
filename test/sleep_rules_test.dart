@@ -348,6 +348,99 @@ void main() {
           '(departure − show-up lead − prep − commute)',
     );
   });
+
+  test('XX001 drops a 21:00-05:00 sleep that overlaps the departure duty', () {
+    final schedule = _xx001LocalDeparture();
+    const settings = UserSettings(
+      defaultBedTime: DayTime(hour: 21, minute: 0),
+      defaultWakeTime: DayTime(hour: 5, minute: 0),
+    );
+    final sleeps = _sleepsAfter(
+      schedule.staUtc,
+      _events(
+        schedule,
+        settings: settings,
+        lifestyle: JetlagLifestyle.localAdapt,
+      ),
+    );
+    final dutyStart = schedule.pickupUtc!;
+    final dutyEnd = schedule.stdUtc.add(
+      Duration(minutes: schedule.blockMinutes),
+    );
+
+    expect(
+      sleeps.where((event) => _overlapsDuty(event, dutyStart, dutyEnd)),
+      isEmpty,
+    );
+    expect(sleeps.where((event) => event.startUtc == _ams(28, 21, 0)), isEmpty);
+    expect(sleeps.where((event) => event.endUtc == _ams(29, 5, 0)), isEmpty);
+  });
+
+  test('XX001 local adapt skips the home-night pre-departure sleep', () {
+    final schedule = _xx001LocalDeparture();
+    final sleeps = _sleepsAfter(
+      schedule.staUtc,
+      _events(schedule, lifestyle: JetlagLifestyle.localAdapt),
+    );
+
+    expect(
+      sleeps.where(
+        (event) =>
+            event.startUtc == _ams(28, 10, 20) &&
+            event.endUtc == _ams(28, 17, 20),
+      ),
+      isEmpty,
+    );
+    expect(sleeps.where((event) => event.detail.contains('출발 전')), isEmpty);
+  });
+
+  test('XX001 home-time mode keeps the pre-departure sleep', () {
+    final schedule = _xx001LocalDeparture();
+    final sleeps = _sleepsAfter(schedule.staUtc, _events(schedule));
+
+    expect(
+      sleeps.where(
+        (event) =>
+            event.startUtc == _ams(28, 10, 20) &&
+            event.endUtc == _ams(28, 17, 20) &&
+            event.detail.contains('출발 전'),
+      ),
+      hasLength(1),
+    );
+  });
+}
+
+/// XX001 leaves AMS at 21:15 with a 19:05 pickup. Inbound arrival is 15:00
+/// the day before. Block is 11 hours, so the flight STA is 08:15 next morning.
+JetlagScheduleSnapshot _xx001LocalDeparture() {
+  return JetlagScheduleSnapshot(
+    stationLabel: 'AMS',
+    originLabel: 'ICN',
+    localTimeZone: 'Europe/Amsterdam',
+    referenceTimeZone: 'Asia/Seoul',
+    staUtc: _ams(27, 15, 0),
+    stdUtc: _ams(28, 21, 15),
+    pickupUtc: _ams(28, 19, 5),
+    flightNumber: 'XX001',
+    blockMinutes: 11 * 60,
+  );
+}
+
+DateTime _ams(int day, int hour, int minute) {
+  return zonedUtc(
+    iana: 'Europe/Amsterdam',
+    year: 2026,
+    month: 11,
+    day: day,
+    hour: hour,
+    minute: minute,
+  );
+}
+
+bool _overlapsDuty(GuideEvent event, DateTime dutyStart, DateTime dutyEnd) {
+  final end = event.endUtc;
+  if (end == null) return false;
+  return event.startUtc.isBefore(dutyEnd) && dutyStart.isBefore(end);
 }
 
 /// Both clocks are Seoul. Wake 04:00 ends the mode night at 19:00Z.

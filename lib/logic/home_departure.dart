@@ -40,20 +40,28 @@ class HomeDeparturePlan {
   final Duration shortfall;
 }
 
-/// Home-base dawn report: wake early enough to prepare and travel, and
-/// offer that sleep before the forced wake.
+/// Dawn report on the mode clock: wake early enough to prepare and travel,
+/// and offer that sleep before the forced wake.
+///
+/// [clockZone] and [clockShift] default to the home base with no shift.
+/// That is the fixed home night. Hybrid passes the same zone plus its
+/// current shift. Local adaptation passes the station zone.
 class HomeDepartureAdvisor {
   const HomeDepartureAdvisor();
 
   HomeDeparturePlan evaluate({
     required JetlagScheduleSnapshot schedule,
     required UserSettings settings,
+    String? clockZone,
+    Duration clockShift = Duration.zero,
   }) {
-    final home = schedule.referenceTimeZone;
-    final report = _bindingReport(schedule, settings, home);
+    final zone = clockZone == null || clockZone.trim().isEmpty
+        ? schedule.referenceTimeZone
+        : clockZone;
+    final report = _bindingReport(schedule, settings, zone, clockShift);
     if (report == null) return HomeDeparturePlan.none;
 
-    final night = _naturalNight(report, settings, home);
+    final night = _naturalNight(report, settings, zone, clockShift);
     if (night == null) return HomeDeparturePlan.none;
 
     final lead = settings.prepTime + settings.commuteTime;
@@ -106,12 +114,13 @@ class HomeDepartureAdvisor {
     return std.subtract(settings.homeShowupLead).subtract(lead);
   }
 
-  /// Earlier of the pickup and show-up clocks that sit inside the usual night.
-  /// Leaving home is limited by whichever report arrives first.
+  /// Earlier of the pickup and show-up clocks that sit inside the mode night.
+  /// Leaving is limited by whichever report arrives first.
   DateTime? _bindingReport(
     JetlagScheduleSnapshot schedule,
     UserSettings settings,
-    String homeIana,
+    String zone,
+    Duration shift,
   ) {
     final candidates = <DateTime>[
       if (schedule.pickupUtc != null) schedule.pickupUtc!.toUtc(),
@@ -119,45 +128,41 @@ class HomeDepartureAdvisor {
     ];
     DateTime? chosen;
     for (final instant in candidates) {
-      if (!_inUsualSleep(instant, settings, homeIana)) continue;
+      if (_naturalNight(instant, settings, zone, shift) == null) continue;
       if (chosen == null || instant.isBefore(chosen)) chosen = instant;
     }
     return chosen;
   }
 
-  bool _inUsualSleep(DateTime instant, UserSettings settings, String homeIana) {
-    final wall = wallClock(instant, homeIana);
-    return clockFallsInSleep(
-      wall.hour * 60 + wall.minute,
-      settings.defaultBedTime.minuteOfDay,
-      settings.defaultWakeTime.minuteOfDay,
-    );
-  }
-
+  /// The mode night that contains [instant], or null when it is daytime
+  /// on that clock. [shift] moves the home night the way Hybrid does.
   _Night? _naturalNight(
     DateTime instant,
     UserSettings settings,
-    String homeIana,
+    String zone,
+    Duration shift,
   ) {
-    final wall = wallClock(instant, homeIana);
-    final minute = wall.hour * 60 + wall.minute;
+    final utc = instant.toUtc();
+    final wall = wallClock(utc, zone);
+    final today = DateTime(wall.year, wall.month, wall.day);
     final bedMinute = settings.defaultBedTime.minuteOfDay;
     final wakeMinute = settings.defaultWakeTime.minuteOfDay;
-    if (!clockFallsInSleep(minute, bedMinute, wakeMinute)) return null;
-
-    final today = DateTime(wall.year, wall.month, wall.day);
-    final bedDay = bedMinute > wakeMinute && minute < bedMinute
-        ? today.subtract(const Duration(days: 1))
-        : today;
-    final bedUtc = _at(homeIana, bedDay, bedMinute);
-    var wakeUtc = _at(homeIana, bedDay, wakeMinute);
-    if (!wakeUtc.isAfter(bedUtc)) {
-      wakeUtc = _at(homeIana, bedDay.add(const Duration(days: 1)), wakeMinute);
+    for (final delta in const [-1, 0, 1]) {
+      final day = DateTime(today.year, today.month, today.day + delta);
+      final bedUtc = _at(zone, day, bedMinute, shift);
+      var wakeUtc = _at(zone, day, wakeMinute, shift);
+      if (!wakeUtc.isAfter(bedUtc)) {
+        final next = DateTime(day.year, day.month, day.day + 1);
+        wakeUtc = _at(zone, next, wakeMinute, shift);
+      }
+      if (!utc.isBefore(bedUtc) && utc.isBefore(wakeUtc)) {
+        return _Night(bedUtc, wakeUtc);
+      }
     }
-    return _Night(bedUtc, wakeUtc);
+    return null;
   }
 
-  DateTime _at(String iana, DateTime day, int minuteOfDay) {
+  DateTime _at(String iana, DateTime day, int minuteOfDay, Duration shift) {
     return zonedUtc(
       iana: iana,
       year: day.year,
@@ -165,6 +170,7 @@ class HomeDepartureAdvisor {
       day: day.day,
       hour: minuteOfDay ~/ 60,
       minute: minuteOfDay % 60,
+      shift: shift,
     );
   }
 }

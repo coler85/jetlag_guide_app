@@ -33,15 +33,25 @@ List<GuideEvent> lifestyleBlocks({
   if (!std.isAfter(sta)) return const [];
 
   final windows = _sleepWindows(schedule, lifestyle, settings);
-  final sleeps = _mergeCloseSleeps(
-    _withPreDepartureSleep(
+  final seeded = windows.isEmpty
+      ? _firstSleepAfterArrival(schedule, lifestyle, settings)
+      : windows;
+  final prepared = _withPreDepartureSleep(
+    schedule,
+    settings,
+    lifestyle,
+    seeded,
+  );
+  var cleared = _clearDutyOverlap(schedule, settings, prepared);
+  if (cleared.isEmpty && prepared.isNotEmpty) {
+    cleared = _clearDutyOverlap(
       schedule,
       settings,
-      lifestyle,
-      windows.isEmpty
-          ? _firstSleepAfterArrival(schedule, lifestyle, settings)
-          : windows,
-    ),
+      _firstSleepAfterArrival(schedule, lifestyle, settings),
+    );
+  }
+  final sleeps = _mergeCloseSleeps(
+    cleared,
     floor: sta.add(settings.arrivalToSleep),
     target: settings.sleepTarget,
     std: std,
@@ -279,7 +289,7 @@ List<_SleepWindow> _sleepWindows(
     }
     windows.add(_SleepWindow(startUtc: clipped, endUtc: end));
   }
-  return _withHomeDeparture(schedule, settings, windows);
+  return _withHomeDeparture(schedule, settings, lifestyle, windows);
 }
 
 /// Calendar days of the mode clock, plus the day before arrival so a night
@@ -312,11 +322,15 @@ DateTime _wakeOnPickupNight({
 List<_SleepWindow> _withHomeDeparture(
   JetlagScheduleSnapshot schedule,
   UserSettings settings,
+  JetlagLifestyle lifestyle,
   List<_SleepWindow> windows,
 ) {
+  final clock = _modeClock(schedule, lifestyle, settings);
   final plan = const HomeDepartureAdvisor().evaluate(
     schedule: schedule,
     settings: settings,
+    clockZone: clock.zone,
+    clockShift: clock.shift,
   );
   final start = plan.recommendedStartUtc;
   final end = plan.recommendedEndUtc;
@@ -370,6 +384,78 @@ DateTime? _departureAnchor(
   final std = schedule.stdUtc.toUtc();
   if (!std.isAfter(schedule.staUtc.toUtc())) return null;
   return std.subtract(settings.homeShowupLead);
+}
+
+/// Removes mode sleep that overlaps the departing flight's duty.
+///
+/// Duty runs from the departure report to that flight's STA (STD plus the
+/// block). When at least one 90-minute cycle fits before the report, that
+/// prefix stays and ends at report − prep − commute. A shorter prefix is
+/// dropped. The 3-hour merge runs after this.
+List<_SleepWindow> _clearDutyOverlap(
+  JetlagScheduleSnapshot schedule,
+  UserSettings settings,
+  List<_SleepWindow> windows,
+) {
+  final dutyStart = _dutyStart(schedule, settings);
+  if (dutyStart == null || windows.isEmpty) return windows;
+  final dutyEnd = schedule.stdUtc.toUtc().add(
+    Duration(minutes: schedule.blockMinutes),
+  );
+  if (!dutyEnd.isAfter(dutyStart)) return windows;
+  final std = schedule.stdUtc.toUtc();
+  final lead = settings.prepTime + settings.commuteTime;
+  final kept = <_SleepWindow>[];
+  for (final window in windows) {
+    if (!_rangesOverlap(
+      window.startUtc,
+      window.endUtc,
+      dutyStart,
+      dutyEnd,
+    )) {
+      kept.add(window);
+      continue;
+    }
+    final beforeEnd = window.endUtc.isBefore(dutyStart)
+        ? window.endUtc
+        : dutyStart;
+    if (beforeEnd.difference(window.startUtc) < kSleepCycle) continue;
+    final block = _cyclesEndingAt(
+      wake: dutyStart.subtract(lead),
+      earliest: window.startUtc,
+      target: settings.sleepTarget,
+      std: std,
+    );
+    if (block == null ||
+        _rangesOverlap(block.startUtc, block.endUtc, dutyStart, dutyEnd)) {
+      continue;
+    }
+    kept.add(
+      _SleepWindow(
+        startUtc: block.startUtc,
+        endUtc: block.endUtc,
+        earlyShowUp: window.earlyShowUp,
+        detail: window.detail,
+      ),
+    );
+  }
+  return kept;
+}
+
+/// Start of the duty for the flight that leaves at STD.
+///
+/// The pickup is that start when it falls before departure and not earlier
+/// than departure − show-up lead − prep − commute. An earlier pickup stays
+/// on the layover, and the duty then starts at departure − show-up lead.
+DateTime? _dutyStart(JetlagScheduleSnapshot schedule, UserSettings settings) {
+  final std = schedule.stdUtc.toUtc();
+  if (!std.isAfter(schedule.staUtc.toUtc())) return null;
+  final showup = std.subtract(settings.homeShowupLead);
+  final pickup = schedule.pickupUtc?.toUtc();
+  if (pickup == null || !pickup.isBefore(std)) return showup;
+  final earliest = showup.subtract(settings.prepTime + settings.commuteTime);
+  if (pickup.isBefore(earliest)) return showup;
+  return pickup;
 }
 
 /// True when [instant] sits in the mode night, from bedtime up to wake.
