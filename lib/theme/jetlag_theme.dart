@@ -209,6 +209,7 @@ class JetlagTheme {
     switch (kind) {
       case GuideEventKind.meal:
         return meal;
+      case GuideEventKind.mealDeadline:
       case GuideEventKind.caffeine:
         return caffeine;
       case GuideEventKind.sleep:
@@ -231,6 +232,8 @@ class JetlagTheme {
     switch (kind) {
       case GuideEventKind.meal:
         return Icons.restaurant;
+      case GuideEventKind.mealDeadline:
+        return Icons.no_meals;
       case GuideEventKind.caffeine:
         return Icons.local_cafe;
       case GuideEventKind.sleep:

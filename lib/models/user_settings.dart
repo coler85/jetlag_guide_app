@@ -40,7 +40,7 @@ class UserSettings {
     this.arrivalDeboard = const Duration(minutes: 30),
     this.hotelTransfer = const Duration(minutes: 60),
     this.afterHotelReady = const Duration(minutes: 60),
-    this.arrivalOrder = ArrivalOrder.auto,
+    this.arrivalOrder = ArrivalOrder.restFirst,
     this.hybridMaxShiftHours = 3,
     this.homeShowupLead = const Duration(minutes: 95),
     this.chosenSleep = const Duration(hours: 7),

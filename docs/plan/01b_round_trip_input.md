@@ -129,11 +129,11 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 - 도착 후 잠들기까지는 2시간 30분이다. 설정 `arrivalToSleep`(하기·입국 + 호텔 이동 + 호텔 도착 후 준비의 합, 보완 9b에서 세 값으로 풀림)의 기본값이며, 1~4시간, 15분 단위다.
 - 출발 전 수면은 픽업(없으면 출발 − 쇼업 여유)이 그날 모드 밤·새벽에 있을 때만 넣는다. 한국시간 유지는 홈, 하이브리드는 시프트를 적용한 홈, 현지 적응은 현지 시계다. 밤·새벽은 그 모드의 취침~기상(기본 23:00–07:00)이다. 넣을 때의 끝은 픽업 − 준비 − 이동이고, 그 시각에 90분이 안 되면 출발 − 쇼업 여유 − 준비 − 이동이다. 길이는 목표를 넘지 않는 90분 주기다. 해당하지 않으면 그날은 모드 수면만 둔다.
 - 픽업으로 기상을 당기는 것은 그 픽업이 들어 있는 밤만이다.
-- 수면 간격 3시간 미만은 합침. 모든 모드에 같은 기준(`kSleepMergeGap`)을 쓴다. 끝은 뒤쪽 수면의 기상이고, 길이는 목표 안의 90분 주기다. 간격이 3시간 이상이면 두 블록을 두고 그 사이에 식사 블록을 둔다.
+- 수면 간격 3시간 미만은 합침. 모든 모드에 같은 기준(`kSleepMergeGap`)을 쓴다. 끝은 뒤쪽 수면의 기상이고, 길이는 목표 안의 90분 주기다. 간격이 3시간 이상이면 두 블록을 둔다. 끼니는 수면−2시간 자동이 아니라 모드 시계 09/13/18(보완 9g).
 
 ## 보완 5 (2026-11-26) 가이드 계산 방식 화면
 
-설정 맨 아래 "이 가이드는 어떻게 계산하나요"에서 계산 설명을 연다. 숫자는 설정값과 `kSleepMergeGap`, `kSleepCycle`을 읽는다. 식사는 화면에서 "잠들기 1~2시간 전"으로 적고, 배치에 쓰는 `kMealLead`(2시간)는 그대로다. 홈이 서울일 때만 "한국시간"이라고 쓴다. 의학적 표현은 쓰지 않고, 안내는 참고용이며 데이터는 기기에만 둔다고 적는다.
+설정 맨 아래 "이 가이드는 어떻게 계산하나요"에서 계산 설명을 연다. 숫자는 설정값과 `kSleepMergeGap`, `kSleepCycle`을 읽는다. 식사는 모드 시계 09:00·13:00·18:00과 밤 수면 마감선(`kMealLead`), ±`kMealShift`(1시간) 이동으로 설명한다(보완 9g). 홈이 서울일 때만 "한국시간"이라고 쓴다. 의학적 표현은 쓰지 않고, 안내는 참고용이며 데이터는 기기에만 둔다고 적는다.
 
 ## 보완 7 (근무·비행 구간 수면 정리와 기내 휴식 참고 시간대)
 
@@ -184,7 +184,7 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 
 ## 보완 9 (도착 후 순서, 밤샘 비행 뒤 낮잠, 저녁 서행 문구)
 
-상태: ✅ 완료 (커밋 전). 샘플은 XX000/XX001만 쓴다. 보완 9b에서 식사 가능 시점을 호텔 도착으로 바꿈.
+상태: ✅ 보완 9e까지 코드 반영 (커밋 전). 샘플은 XX000/XX001만 쓴다. 보완 9e에서 도착 후 순서를 낮잠 충돌로 좁힘.
 
 ### 상수 (`lib/logic/sleep_constants.dart`)
 - `kArrivalSleepSoon` = 6시간: 호텔 도착→첫 수면이 이 안이면 도착 직후 수면.
@@ -195,18 +195,25 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 - (제거) `kArrivalMealReady` 고정 1시간 — 보완 9b에서 호텔 도착(하기+이동)으로 대체.
 
 ### 설정
-- `ArrivalOrder` { `auto`, `restFirst`, `mealFirst` } 라벨 자동 / 먼저 휴식 / 먼저 식사. 기본 `auto`.
-- `UserSettings.arrivalOrder`. 저장 키 `jetlag_guide_arrival_order`(enum name). 알 수 없거나 없음 → `auto`.
-- 설정 화면 도착 후 시간 세 줄(하기·입국 / 호텔 이동 / 호텔 도착 후 준비) 아래 '도착 후 순서' (`settings-arrival-order`, `-auto`/`-rest`/`-meal`).
+- `ArrivalOrder` { `restFirst`, `mealFirst` } 라벨 휴식 먼저 / 식사 먼저. 기본 `restFirst`.
+- `UserSettings.arrivalOrder`. 저장 키 `jetlag_guide_arrival_order`(enum name). 없거나 알 수 없거나 `auto` → `restFirst`. 저장 시 `restFirst`/`mealFirst` 이름만 씀.
+- 설정 화면 도착 후 시간 세 줄(하기·입국 / 호텔 이동 / 호텔 도착 후 준비) 아래 '도착 후 순서' (`settings-arrival-order`, `-rest`/`-meal`).
 
-### 도착 직후 식사·수면 (`lifestyleBlocks`)
-- 대상: 호텔 도착 이후·시작−호텔 도착 ≤ `kArrivalSleepSoon`인 첫 수면(낮잠 포함) 하나.
-- 호텔 도착 = STA + `hotelArrivalDelay`(하기+이동). 식사 가능 시점 = 호텔 도착.
-- `gap` = 도착 직후 수면 시작 − 호텔 도착.
-- `gap` ≥ `kMealLead`이고 `auto`/`mealFirst`: 수면 − `kMealLead` 식사('잠들기 전 식사.').
-- `gap` < `kMealLead`이거나 `restFirst`: 수면 전 식사 없음. 호텔 도착 간식 + 수면 끝 식사('일어난 뒤 먹어요.'). 수면 끝이 다음 수면−`kMealLead` 이후이거나 STD 이후면 끝 식사 생략.
-- `mealFirst` + `gap` < `kMealLead`: 호텔 도착 식사('가볍게 먹고 바로 쉬어요.'). 수면 시각 불변.
-- 식사·간식 id: `meal-<micros>` / `snack-<micros>`. 카페인·빛 로직 불변.
+### 식사·수면 (`lifestyleBlocks`) — 보완 9g (9f 대체, t157u)
+- 수면을 먼저 확정한 뒤, 모드 시계(`kstAnchor`=홈, `localAdapt`=현지, `hybrid`=이동한 홈)로 STA 전날~STD 각 달력일에 `kDefaultMealMinutes`(09:00·13:00·18:00)를 `clock.at`으로 둔다.
+- 호텔 체류 = [호텔 도착, 떠나는 시각](출발 시각 포함). 호텔 도착 = STA + `hotelArrivalDelay`. 떠나는 시각 = 픽업(호텔 도착 이후) → 없으면 쇼업(동일) → 없으면 STD.
+- 각 기본 끼니는 자기 원래 시각만 보고 **한 번만** 옮긴다(연쇄 미룸 없음, t156u).
+  - 호텔 도착 전: 호텔 도착 ≤ 원래+`kMealShift`(1시간)이고 마감 전·호텔이면 호텔 도착으로 미룸. 아니면 생략.
+  - 호텔 출발 후: 출발 ≥ 원래−`kMealShift`이고 마감 전·호텔이면 출발 시각으로 당김. 아니면 생략.
+  - 호텔 안·수면·마감에 걸리면 생략. 그 외는 원래 시각.
+- 밤 수면 식사 마감선 = 수면 시작 − `kMealLead`(2시간). 마감선 이상 끼니 생략. `GuideEventKind.mealDeadline` 점 이벤트(제목 '식사 마감'). 호텔 체류 안에만. 카페인 마감 로직 유지.
+- 도착 후 순서는 `_immediateArrivalSleep`이 낮잠이고 기본 식사 시각이 낮잠 [start, end)와 겹칠 때만.
+  - 겹친 끼니(두 설정 공통): 낮잠 끝으로 미룸. 원래+`kMealShift` 안·마감 전이면 유지, 폭 초과면 그 끼니만 생략.
+  - `mealFirst`: 호텔 도착에 **추가** 가벼운 식사('식사'/'가볍게 먹고 바로 쉬어요.'). (1)의 미룸과 같은 시각이면 이벤트 하나·가벼운 식사 상세.
+  - `restFirst`: 추가 가벼운 식사 없음. (1) 때문에 호텔 도착 전 끼니가 호텔로 미뤄질 수는 있음.
+- (9g에서 제거) `kMealMinGap`·`_enforceMealMinGap`. 끼니 최소 3시간 간격 없음. 9f 식사 먼저의 폭 초과→간식 대체 분기 제거. 18:00 이후 선택 간식 없음.
+- (9f에서 제거 유지) `lastInflightMealUtc`, `kInflightMealSleepGap`, 기내 식사 간격 규칙. 기내 식사 이벤트 생성·추정 금지.
+- 식사 id: `meal-<micros>`. 마감: `meal-deadline-<micros>`. 카페인·빛 로직 불변.
 
 ### 밤샘 비행 뒤 낮잠
 - `lifestyleBlocks(inboundStdUtc:)` — `buildGuideEvents`가 outbound STA≈schedule.STA(±1분)일 때 `outbound.stdUtc` 전달. null이면 밤샘 판정 안 함.
@@ -229,3 +236,42 @@ flutter analyze와 flutter test 전체 결과 보고 후 멈춤. 설정 화면 U
 - 저장: 세 키(`jetlag_guide_arrival_deboard_minutes` 등). 없으면 옛 `jetlag_guide_arrival_to_sleep_minutes`를 1:2:2로 15분 단위 분할(150→30/60/60). 총합 키도 세 값 합으로 갱신.
 - 식사·간식·`kArrivalSleepSoon` gap 기준 = 호텔 도착. 낮잠·수면 시작은 STA+`arrivalToSleep` 유지.
 - 계산 화면: STA=램프, 식사=호텔 도착 이후, 수면=준비 뒤. 숫자는 설정값.
+
+### 보완 9c (도착 후 순서 두 선택지로 축소)
+
+- `ArrivalOrder.auto` 제거. 선택지 `restFirst`(휴식 먼저, 기본) / `mealFirst`(식사 먼저)만.
+- 저장 키 동일. 옛 `auto`·알 수 없는 값·없음 → 로드 시 `restFirst`. 저장은 `restFirst`/`mealFirst`만.
+- 설정 칩 `-auto` 제거. 설명에 휴식 먼저가 기본임을 밝힘(칩에 '(기본)' 붙이지 않음).
+- `lifestyle_plan`: auto 분기 제거. 휴식 먼저 = 항상 간식+일어난 뒤 식사. 잠들기 전 식사는 `mealFirst` + gap ≥ `kMealLead`만.
+- 계산 방식 화면·문서 라벨을 '휴식 먼저' / '식사 먼저'로 맞춤.
+
+### 보완 9d (긴 간격 잠들기 전 식사 회귀)
+
+- 9c가 긴 간격에서도 휴식 먼저를 간식·일어난 뒤 식사로 둔 회귀를 바로잡음.
+- `gap` ≥ `kMealLead`이면 두 설정 모두 수면−`kMealLead` 식사. `gap` < `kMealLead`일 때만 restFirst/mealFirst 분기.
+- 9e에서 순서 적용 범위를 도착 직후 **낮잠**으로 좁히며, 긴 간격(17:00 도착) 동일 식사 결과는 유지.
+
+### 보완 9e (식사 먼저 = 낮잠 충돌 시에만, t148u/t151u)
+
+- 잠들기 전 식사 마감선은 밤 수면에만. 도착 직후 낮잠에는 낮잠−2시간 식사를 만들지 않음.
+- 도착 후 순서는 `_immediateArrivalSleep`이 낮잠일 때만. 밤 수면만이면 두 설정 동일.
+- 식사 먼저: 호텔 직후 식사 + 같은 낮잠 + 일어난 뒤 식사 유지 + 밤 수면 전 식사 유지(다른 끼니 삭제 금지).
+- 휴식 먼저: 간식 → 낮잠 → 일어난 뒤 식사 → 밤 수면 전 식사.
+- `_mealBeforeSleep` 하한 = 호텔 도착. 호텔보다 이른 잠들기 전 식사는 생략.
+- 기내 식사 이벤트 생성·추정 금지. `lastInflightMealUtc` + `kInflightMealSleepGap`(제안값 4시간)은 값이 있을 때만.
+- 설정·계산 방식 문구를 '도착 후 낮잠과 식사가 겹칠 때' 의미로 갱신.
+
+### 보완 9f (모드 시계 09/13/18 + 식사 마감선, t154u)
+
+- 기본 식사 = `kDefaultMealMinutes` 09:00/13:00/18:00(모드 시계). 설정 UI·UserSettings breakfast/lunch/dinner 없음.
+- (9g에서 덮어씀) 당시 `kMealShift` = 2시간, `kMealMinGap` = 3시간. `kMealLead` = 2시간은 밤 수면 **식사 마감선**(고정 끼니 아님).
+- 9e의 `lastInflightMealUtc` / `kInflightMealSleepGap` / 기내 식사 간격 규칙을 제거함. `_arrivalAwareMeals` / `_preSleepMeal` / `_nightPreSleepMeal` 중심 배치를 기본 시각 배치로 교체.
+- 새 `GuideEventKind.mealDeadline`(점 이벤트, 카페인 마감과 비슷한 스타일).
+- 도착 후 순서는 도착 직후 낮잠 ∩ 기본 식사 시각일 때만. 18시 이후 선택 간식 없음.
+
+### 보완 9g (호텔 미룸·출발 당김 + 식사 먼저 추가 가벼운 식사, t157u)
+
+- `kMealShift` = **1시간**. `kMealMinGap`·`_enforceMealMinGap` 제거.
+- 호텔 도착 전 끼니 → 호텔 도착으로 미룸(±1시간·마감 전). 호텔 출발 후 끼니 → 출발로 당김(동일). 호텔 체류 상한은 출발 포함(`!at.isAfter(hotelLeave)`). 연쇄 미룸 없음.
+- 낮잠 겹침: 두 설정 모두 낮잠 끝으로 미룸. `mealFirst`만 호텔 도착에 가벼운 식사 추가(같은 시각이면 병합). 9f 폭 초과→간식 분기 제거.
+- 설정·계산 방식·docs·테스트를 ±1시간과 9g 타임라인에 맞춤.

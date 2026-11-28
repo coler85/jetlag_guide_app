@@ -79,10 +79,23 @@ List<GuideEvent> lifestyleBlocks({
     sleeps,
     inboundStdUtc: inboundStdUtc,
   );
-  final arrivalSleep = _immediateArrivalSleep(sleeps, sta, settings);
   final westboundSleep = _lastSleepBeforeDeparture(sleeps, std);
   final appendWestbound = _shouldAppendWestboundEveningNote(schedule, lifestyle);
+  final clock = _modeClock(schedule, lifestyle, settings);
+  final hotelArrival = settings.hotelArrivalUtc(sta);
+  final hotelLeave = _hotelLeaveUtc(schedule, std, hotelArrival);
   final blocks = <GuideEvent>[];
+  blocks.addAll(
+    _placeMeals(
+      sleeps: sleeps,
+      settings: settings,
+      clock: clock,
+      sta: sta,
+      std: std,
+      hotelArrival: hotelArrival,
+      hotelLeave: hotelLeave,
+    ),
+  );
   for (var index = 0; index < sleeps.length; index++) {
     final sleep = sleeps[index];
     final next = index + 1 < sleeps.length ? sleeps[index + 1] : null;
@@ -100,21 +113,6 @@ List<GuideEvent> lifestyleBlocks({
         ),
       );
     }
-    final isArrival = identical(sleep, arrivalSleep) ||
-        (arrivalSleep != null &&
-            sleep.startUtc == arrivalSleep.startUtc &&
-            sleep.endUtc == arrivalSleep.endUtc);
-    blocks.addAll(
-      _arrivalAwareMeals(
-        sleep: sleep,
-        next: next,
-        sta: sta,
-        std: std,
-        sleeps: sleeps,
-        settings: settings,
-        isArrivalSleep: isArrival,
-      ),
-    );
     var detail = sleep.detail ??
         (sleep.earlyShowUp
             ? _preDepartureDetail(schedule)
@@ -171,115 +169,230 @@ _SleepWindow? _lastSleepBeforeDeparture(
   return last;
 }
 
-List<GuideEvent> _arrivalAwareMeals({
-  required _SleepWindow sleep,
-  required _SleepWindow? next,
-  required DateTime sta,
-  required DateTime std,
+/// Leave-hotel instant: pickup, else show-up, else STD. No extra buffer.
+/// A pickup/show-up at or before hotel arrival is ignored (not a hotel leave).
+DateTime _hotelLeaveUtc(
+  JetlagScheduleSnapshot schedule,
+  DateTime std,
+  DateTime hotelArrival,
+) {
+  final pickup = schedule.pickupUtc?.toUtc();
+  if (pickup != null && pickup.isAfter(hotelArrival)) return pickup;
+  final showup = schedule.showupUtc?.toUtc();
+  if (showup != null && showup.isAfter(hotelArrival)) return showup;
+  return std;
+}
+
+/// Hotel stay is [hotelArrival, hotelLeave] inclusive of leave.
+bool _atHotel(DateTime at, DateTime hotelArrival, DateTime hotelLeave) {
+  return !at.isBefore(hotelArrival) && !at.isAfter(hotelLeave);
+}
+
+/// True when [at] sits in a night-sleep meal-deadline window [deadline, bed).
+bool _pastMealDeadline(
+  DateTime at,
+  List<_SleepWindow> sleeps,
+  _ModeClock clock,
+) {
+  for (final sleep in sleeps) {
+    if (!_inModeNight(sleep.startUtc, clock)) continue;
+    final deadline = sleep.startUtc.subtract(kMealLead);
+    if (!at.isBefore(deadline) && at.isBefore(sleep.startUtc)) return true;
+  }
+  return false;
+}
+
+class _PlacedMeal {
+  _PlacedMeal({
+    required this.at,
+    required this.title,
+    required this.detail,
+  });
+
+  final DateTime at;
+  final String title;
+  final String detail;
+}
+
+const _lightMealDetail = '가볍게 먹고 바로 쉬어요.';
+
+/// Mode-clock 09/13/18 meals, hotel/nap shifts (±[kMealShift]), night deadlines.
+List<GuideEvent> _placeMeals({
   required List<_SleepWindow> sleeps,
   required UserSettings settings,
-  required bool isArrivalSleep,
+  required _ModeClock clock,
+  required DateTime sta,
+  required DateTime std,
+  required DateTime hotelArrival,
+  required DateTime hotelLeave,
 }) {
-  if (!isArrivalSleep) {
-    return _preSleepMeal(sleep: sleep, sta: sta, std: std, sleeps: sleeps);
-  }
+  final arrivalSleep = _immediateArrivalSleep(sleeps, sta, settings);
+  final arrivalNap = arrivalSleep != null &&
+          !_inModeNight(arrivalSleep.startUtc, clock)
+      ? arrivalSleep
+      : null;
 
-  final mealReady = settings.hotelArrivalUtc(sta);
-  final gap = sleep.startUtc.difference(mealReady);
-  final order = settings.arrivalOrder;
-  final restFirstStyle =
-      order == ArrivalOrder.restFirst ||
-      (order != ArrivalOrder.mealFirst && gap < kMealLead);
+  var napClash = false;
+  final placed = <_PlacedMeal>[];
+  for (final day in _nightsCovering(clock.zone, sta, std)) {
+    for (final minute in kDefaultMealMinutes) {
+      final original = clock.at(day, minute);
+      if (!original.isBefore(std)) continue;
 
-  if (order == ArrivalOrder.mealFirst && gap < kMealLead) {
-    return _mealBeforeSleep(
-      at: mealReady,
-      sta: sta,
-      std: std,
-      sleeps: sleeps,
-      sleep: sleep,
-      title: '식사',
-      detail: '가볍게 먹고 바로 쉬어요.',
-      idPrefix: 'meal',
-    );
-  }
+      final overlapsNap = arrivalNap != null &&
+          !original.isBefore(arrivalNap.startUtc) &&
+          original.isBefore(arrivalNap.endUtc);
+      if (overlapsNap) napClash = true;
 
-  if (restFirstStyle) {
-    final events = <GuideEvent>[
-      ..._mealBeforeSleep(
-        at: mealReady,
-        sta: sta,
+      final shifted = _shiftDefaultMeal(
+        original: original,
+        nap: arrivalNap,
+        overlapsNap: overlapsNap,
+        hotelArrival: hotelArrival,
+        hotelLeave: hotelLeave,
         std: std,
         sleeps: sleeps,
-        sleep: sleep,
-        title: '간식',
-        detail: '배고프면 가볍게만 먹고 쉬어요. 식사는 일어난 뒤에 해요.',
-        idPrefix: 'snack',
-      ),
-    ];
-    final wakeMeal = sleep.endUtc;
-    final nextQuiet = next?.startUtc.subtract(kMealLead);
-    final wakeOk = wakeMeal.isBefore(std) &&
-        (nextQuiet == null || wakeMeal.isBefore(nextQuiet)) &&
-        !wakeMeal.isBefore(sta) &&
-        !_insideSleep(wakeMeal, sleeps);
-    if (wakeOk) {
-      events.add(
-        GuideEvent(
-          id: 'meal-${wakeMeal.microsecondsSinceEpoch}',
-          kind: GuideEventKind.meal,
-          startUtc: wakeMeal,
+        clock: clock,
+      );
+      if (shifted != null) placed.add(shifted);
+    }
+  }
+
+  if (settings.arrivalOrder == ArrivalOrder.mealFirst &&
+      napClash &&
+      _mealSlotOk(
+        hotelArrival,
+        hotelArrival: hotelArrival,
+        hotelLeave: hotelLeave,
+        std: std,
+        sleeps: sleeps,
+        clock: clock,
+      )) {
+    final sameIndex = placed.indexWhere(
+      (meal) => meal.at.isAtSameMomentAs(hotelArrival),
+    );
+    if (sameIndex >= 0) {
+      final existing = placed[sameIndex];
+      placed[sameIndex] = _PlacedMeal(
+        at: existing.at,
+        title: '식사',
+        detail: _lightMealDetail,
+      );
+    } else {
+      placed.add(
+        _PlacedMeal(
+          at: hotelArrival,
           title: '식사',
-          detail: '일어난 뒤 먹어요.',
+          detail: _lightMealDetail,
         ),
       );
     }
-    return events;
   }
 
-  return _preSleepMeal(sleep: sleep, sta: sta, std: std, sleeps: sleeps);
-}
-
-List<GuideEvent> _preSleepMeal({
-  required _SleepWindow sleep,
-  required DateTime sta,
-  required DateTime std,
-  required List<_SleepWindow> sleeps,
-}) {
-  return _mealBeforeSleep(
-    at: sleep.startUtc.subtract(kMealLead),
-    sta: sta,
-    std: std,
-    sleeps: sleeps,
-    sleep: sleep,
-    title: '식사',
-    detail: '잠들기 전 식사.',
-    idPrefix: 'meal',
-  );
-}
-
-List<GuideEvent> _mealBeforeSleep({
-  required DateTime at,
-  required DateTime sta,
-  required DateTime std,
-  required List<_SleepWindow> sleeps,
-  required _SleepWindow sleep,
-  required String title,
-  required String detail,
-  required String idPrefix,
-}) {
-  if (at.isBefore(sta) || !at.isBefore(std)) return const [];
-  if (!at.isBefore(sleep.startUtc)) return const [];
-  if (_insideSleep(at, sleeps)) return const [];
-  return [
-    GuideEvent(
-      id: '$idPrefix-${at.microsecondsSinceEpoch}',
-      kind: GuideEventKind.meal,
-      startUtc: at,
-      title: title,
-      detail: detail,
-    ),
+  final events = <GuideEvent>[
+    for (final meal in placed)
+      GuideEvent(
+        id: 'meal-${meal.at.microsecondsSinceEpoch}',
+        kind: GuideEventKind.meal,
+        startUtc: meal.at,
+        title: meal.title,
+        detail: meal.detail,
+      ),
   ];
+
+  for (final sleep in sleeps) {
+    if (!_inModeNight(sleep.startUtc, clock)) continue;
+    final deadline = sleep.startUtc.subtract(kMealLead);
+    if (!_atHotel(deadline, hotelArrival, hotelLeave)) continue;
+    if (!deadline.isBefore(std)) continue;
+    events.add(
+      GuideEvent(
+        id: 'meal-deadline-${deadline.microsecondsSinceEpoch}',
+        kind: GuideEventKind.mealDeadline,
+        startUtc: deadline,
+        title: '식사 마감',
+        detail: '이 시각 이후 식사는 두지 않습니다.',
+      ),
+    );
+  }
+  return events;
+}
+
+/// Moves one default meal at most once: nap end, hotel arrival, or hotel leave.
+_PlacedMeal? _shiftDefaultMeal({
+  required DateTime original,
+  required _SleepWindow? nap,
+  required bool overlapsNap,
+  required DateTime hotelArrival,
+  required DateTime hotelLeave,
+  required DateTime std,
+  required List<_SleepWindow> sleeps,
+  required _ModeClock clock,
+}) {
+  if (overlapsNap && nap != null) {
+    final pushed = nap.endUtc;
+    if (pushed.isAfter(original.add(kMealShift))) return null;
+    if (!_mealSlotOk(
+      pushed,
+      hotelArrival: hotelArrival,
+      hotelLeave: hotelLeave,
+      std: std,
+      sleeps: sleeps,
+      clock: clock,
+    )) {
+      return null;
+    }
+    return _PlacedMeal(at: pushed, title: '식사', detail: '식사.');
+  }
+
+  if (original.isBefore(hotelArrival)) {
+    if (hotelArrival.isAfter(original.add(kMealShift))) return null;
+    if (!_mealSlotOk(
+      hotelArrival,
+      hotelArrival: hotelArrival,
+      hotelLeave: hotelLeave,
+      std: std,
+      sleeps: sleeps,
+      clock: clock,
+    )) {
+      return null;
+    }
+    return _PlacedMeal(at: hotelArrival, title: '식사', detail: '식사.');
+  }
+
+  if (original.isAfter(hotelLeave)) {
+    if (hotelLeave.isBefore(original.subtract(kMealShift))) return null;
+    if (!_mealSlotOk(
+      hotelLeave,
+      hotelArrival: hotelArrival,
+      hotelLeave: hotelLeave,
+      std: std,
+      sleeps: sleeps,
+      clock: clock,
+    )) {
+      return null;
+    }
+    return _PlacedMeal(at: hotelLeave, title: '식사', detail: '식사.');
+  }
+
+  if (_pastMealDeadline(original, sleeps, clock)) return null;
+  if (_insideSleep(original, sleeps)) return null;
+  return _PlacedMeal(at: original, title: '식사', detail: '식사.');
+}
+
+bool _mealSlotOk(
+  DateTime at, {
+  required DateTime hotelArrival,
+  required DateTime hotelLeave,
+  required DateTime std,
+  required List<_SleepWindow> sleeps,
+  required _ModeClock clock,
+}) {
+  if (!_atHotel(at, hotelArrival, hotelLeave)) return false;
+  if (!at.isBefore(std)) return false;
+  if (_pastMealDeadline(at, sleeps, clock)) return false;
+  if (_insideSleep(at, sleeps)) return false;
+  return true;
 }
 
 /// Westbound when the folded (home − local) offset is negative.

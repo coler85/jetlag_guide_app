@@ -23,28 +23,30 @@ void main() {
   });
 
   group('ArrivalOrder settings', () {
-    test('defaults to auto and copyWith/== work', () {
-      expect(UserSettings.defaults.arrivalOrder, ArrivalOrder.auto);
-      final rest = UserSettings.defaults.copyWith(
-        arrivalOrder: ArrivalOrder.restFirst,
+    test('defaults to restFirst and copyWith/== work', () {
+      expect(UserSettings.defaults.arrivalOrder, ArrivalOrder.restFirst);
+      final meal = UserSettings.defaults.copyWith(
+        arrivalOrder: ArrivalOrder.mealFirst,
       );
-      expect(rest.arrivalOrder, ArrivalOrder.restFirst);
-      expect(rest == UserSettings.defaults, isFalse);
+      expect(meal.arrivalOrder, ArrivalOrder.mealFirst);
+      expect(meal == UserSettings.defaults, isFalse);
       expect(
-        rest.copyWith(arrivalOrder: ArrivalOrder.auto),
+        meal.copyWith(arrivalOrder: ArrivalOrder.restFirst),
         UserSettings.defaults,
       );
-      expect(ArrivalOrder.fromName(null), ArrivalOrder.auto);
-      expect(ArrivalOrder.fromName('nope'), ArrivalOrder.auto);
+      expect(ArrivalOrder.fromName(null), ArrivalOrder.restFirst);
+      expect(ArrivalOrder.fromName('nope'), ArrivalOrder.restFirst);
+      expect(ArrivalOrder.fromName('auto'), ArrivalOrder.restFirst);
+      expect(ArrivalOrder.fromName('restFirst'), ArrivalOrder.restFirst);
       expect(ArrivalOrder.fromName('mealFirst'), ArrivalOrder.mealFirst);
-      expect(ArrivalOrder.auto.label, '자동');
-      expect(ArrivalOrder.restFirst.label, '먼저 휴식');
-      expect(ArrivalOrder.mealFirst.label, '먼저 식사');
+      expect(ArrivalOrder.restFirst.label, '휴식 먼저');
+      expect(ArrivalOrder.mealFirst.label, '식사 먼저');
     });
 
-    test('store saves, restores, and falls back unknown to auto', () async {
+    test('store saves, restores, and falls back unknown/auto to restFirst',
+        () async {
       const store = UserSettingsStore();
-      expect((await store.load()).arrivalOrder, ArrivalOrder.auto);
+      expect((await store.load()).arrivalOrder, ArrivalOrder.restFirst);
 
       await store.save(
         UserSettings.defaults.copyWith(arrivalOrder: ArrivalOrder.mealFirst),
@@ -53,12 +55,15 @@ void main() {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(UserSettingsStore.arrivalOrderKey, 'mystery');
-      expect((await store.load()).arrivalOrder, ArrivalOrder.auto);
+      expect((await store.load()).arrivalOrder, ArrivalOrder.restFirst);
+
+      await prefs.setString(UserSettingsStore.arrivalOrderKey, 'auto');
+      expect((await store.load()).arrivalOrder, ArrivalOrder.restFirst);
     });
   });
 
   group('settings form arrival order', () {
-    testWidgets('shows three choices at 360dp without overflow', (
+    testWidgets('shows two choices at 360dp without overflow', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -85,19 +90,21 @@ void main() {
 
       expect(find.text('도착 후 순서'), findsOneWidget);
       expect(find.byKey(const ValueKey('settings-arrival-order')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings-arrival-order-auto')),
+        findsNothing,
+      );
+      expect(find.text('휴식 먼저'), findsOneWidget);
+      expect(find.text('식사 먼저'), findsOneWidget);
       expect(tester.takeException(), isNull);
-
-      await tester.tap(find.byKey(const ValueKey('settings-arrival-order-rest')));
-      await tester.pumpAndSettle();
-      expect(settings.arrivalOrder, ArrivalOrder.restFirst);
 
       await tester.tap(find.byKey(const ValueKey('settings-arrival-order-meal')));
       await tester.pumpAndSettle();
       expect(settings.arrivalOrder, ArrivalOrder.mealFirst);
 
-      await tester.tap(find.byKey(const ValueKey('settings-arrival-order-auto')));
+      await tester.tap(find.byKey(const ValueKey('settings-arrival-order-rest')));
       await tester.pumpAndSettle();
-      expect(settings.arrivalOrder, ArrivalOrder.auto);
+      expect(settings.arrivalOrder, ArrivalOrder.restFirst);
       expect(tester.takeException(), isNull);
     });
   });
@@ -215,174 +222,535 @@ void main() {
   });
 
   group('arrival meal/sleep order', () {
-    test('a) gap under 2h: auto/restFirst snack+wake meal, mealFirst early meal', () {
+    test('a) mode-night arrival sleep: order ignored, no pre-hotel meal', () {
       final schedule = _sfoSample();
-      final mealReady = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
-      // First sleep is 20:30Z; hotel arrival 19:05Z → gap under kMealLead.
+      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
 
-      for (final order in [ArrivalOrder.auto, ArrivalOrder.restFirst]) {
-        final events = _blocks(
-          schedule,
-          settings: UserSettings.defaults.copyWith(arrivalOrder: order),
-        );
-        final firstSleep = _sleeps(events).first;
-        expect(firstSleep.startUtc, DateTime.utc(2026, 11, 29, 20, 30));
+      List<DateTime> mealStarts(List<GuideEvent> events) => events
+          .where((e) => e.kind == GuideEventKind.meal)
+          .map((e) => e.startUtc)
+          .toList()
+        ..sort();
 
-        expect(
-          events.where(
-            (e) =>
-                e.kind == GuideEventKind.meal &&
-                e.title == '식사' &&
-                e.detail == '잠들기 전 식사.' &&
-                e.startUtc.isBefore(firstSleep.startUtc),
-          ),
-          isEmpty,
-        );
-        final snack = events.singleWhere(
-          (e) => e.kind == GuideEventKind.meal && e.title == '간식',
-        );
-        expect(snack.startUtc, mealReady);
-        expect(snack.startUtc, DateTime.utc(2026, 11, 29, 19, 5));
-        expect(snack.detail, contains('일어난 뒤에'));
-        final wakeMeal = events.singleWhere(
-          (e) =>
-              e.kind == GuideEventKind.meal &&
-              e.title == '식사' &&
-              e.detail == '일어난 뒤 먹어요.',
-        );
-        expect(wakeMeal.startUtc, firstSleep.endUtc);
-      }
-
-      final mealFirst = _blocks(
+      final rest = _blocks(
+        schedule,
+        settings: UserSettings.defaults.copyWith(
+          arrivalOrder: ArrivalOrder.restFirst,
+        ),
+      );
+      final meal = _blocks(
         schedule,
         settings: UserSettings.defaults.copyWith(
           arrivalOrder: ArrivalOrder.mealFirst,
         ),
       );
-      final sleep = _sleeps(mealFirst).first;
-      final early = mealFirst.singleWhere(
-        (e) =>
-            e.kind == GuideEventKind.meal &&
-            e.detail == '가볍게 먹고 바로 쉬어요.',
-      );
-      expect(early.startUtc, mealReady);
-      expect(early.title, '식사');
-      expect(mealFirst.where((e) => e.title == '간식'), isEmpty);
+      final firstSleep = _sleeps(rest).first;
       expect(
-        mealFirst.where((e) => e.detail == '일어난 뒤 먹어요.'),
+        firstSleep.startUtc.isAtSameMomentAs(DateTime.utc(2026, 11, 29, 20, 30)),
+        isTrue,
+      );
+      expect(mealStarts(rest), mealStarts(meal));
+      expect(rest.where((e) => e.title == '간식'), isEmpty);
+      expect(
+        rest.where((e) => e.detail == '가볍게 먹고 바로 쉬어요.'),
         isEmpty,
       );
-      expect(sleep.startUtc, DateTime.utc(2026, 11, 29, 20, 30));
-    });
-
-    test('b) gap at least 2h: auto/mealFirst pre-sleep meal, restFirst wake meal', () {
-      // STA 08:00Z, hotel 09:30Z, night sleep 14:00–19:00Z → gap 4.5h.
-      final schedule = _seoulDayArrival();
-      final firstStart = DateTime.utc(2026, 11, 30, 14);
-      final mealReady = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
-
-      for (final order in [ArrivalOrder.auto, ArrivalOrder.mealFirst]) {
-        final events = _blocks(
-          schedule,
-          settings: UserSettings(
-            defaultBedTime: const DayTime(hour: 23, minute: 0),
-            defaultWakeTime: const DayTime(hour: 4, minute: 0),
-            chosenSleep: const Duration(hours: 4),
-            arrivalOrder: order,
-          ),
-        );
-        final first = _sleeps(events).first;
-        expect(first.startUtc, firstStart);
-        final dinner = events.singleWhere(
+      expect(
+        rest.where(
           (e) =>
               e.kind == GuideEventKind.meal &&
-              e.detail == '잠들기 전 식사.' &&
-              e.startUtc.isAtSameMomentAs(firstStart.subtract(kMealLead)),
-        );
-        expect(dinner.startUtc, DateTime.utc(2026, 11, 30, 12));
-      }
-
-      final rest = _blocks(
-        schedule,
-        settings: const UserSettings(
-          defaultBedTime: DayTime(hour: 23, minute: 0),
-          defaultWakeTime: DayTime(hour: 4, minute: 0),
-          chosenSleep: Duration(hours: 4),
-          arrivalOrder: ArrivalOrder.restFirst,
+              e.startUtc.isBefore(hotel),
         ),
+        isEmpty,
       );
-      final first = _sleeps(rest).first;
-      expect(first.startUtc, firstStart);
       expect(
         rest.where((e) => e.detail == '잠들기 전 식사.'),
         isEmpty,
       );
-      expect(
-        rest.singleWhere((e) => e.title == '간식').startUtc,
-        mealReady,
-      );
-      expect(mealReady, DateTime.utc(2026, 11, 30, 9, 30));
-      expect(
-        rest.singleWhere((e) => e.detail == '일어난 뒤 먹어요.').startUtc,
-        first.endUtc,
-      );
     });
 
-    test('overnight 08:00 KST: hotel 09:30 snack, nap 10:30–13:30, wake meal', () {
+    test('overnight 08:00 KST: nap clash + hotel defer; both keep 13:30', () {
       final schedule = _overnightArriveDay();
       final outbound = _overnightOutbound(schedule);
-      final events = buildGuideEvents(
+      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
+      expect(
+        hotel.isAtSameMomentAs(schedule.staUtc.add(const Duration(minutes: 90))),
+        isTrue,
+      );
+      expect(
+        hotel.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 0, 30)),
+        isTrue,
+      ); // 09:30 KST
+      final ready = schedule.staUtc.add(UserSettings.defaults.arrivalToSleep);
+      final nightBed = DateTime.utc(2026, 11, 30, 14); // 23:00 KST
+      final deadline = nightBed.subtract(kMealLead); // 21:00 KST = 12:00Z
+      final meal13 = DateTime.utc(2026, 11, 30, 4); // 13:00 KST
+      final meal18 = DateTime.utc(2026, 11, 30, 9); // 18:00 KST
+      final meal1330 = DateTime.utc(2026, 11, 30, 4, 30); // 13:30 KST
+
+      final rest = buildGuideEvents(
         schedule,
         outbound: outbound,
         settings: UserSettings.defaults,
       );
-      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
-      expect(hotel, schedule.staUtc.add(const Duration(minutes: 90)));
-
-      final snack = events.singleWhere(
-        (e) => e.kind == GuideEventKind.meal && e.title == '간식',
+      expect(
+        rest.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isBefore(schedule.staUtc),
+        ),
+        isEmpty,
       );
-      expect(snack.startUtc, hotel);
-
-      final ready = schedule.staUtc.add(UserSettings.defaults.arrivalToSleep);
-      final nap = _sleeps(events).singleWhere(
+      // 09:00 → hotel 09:30; 13:00 overlaps nap → 13:30; 18:00 stays.
+      expect(
+        rest
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(hotel) &&
+                  e.detail == '식사.',
+            )
+            .startUtc
+            .isAtSameMomentAs(hotel),
+        isTrue,
+      );
+      expect(
+        rest.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(meal13),
+        ),
+        isEmpty,
+      );
+      final nap = _sleeps(rest).singleWhere(
         (e) =>
             e.startUtc.isAtSameMomentAs(ready) &&
             e.detail.contains('밤샘 비행 뒤 짧은 낮잠'),
       );
-      expect(nap.startUtc, ready);
       expect(
-        nap.endUtc!.difference(nap.startUtc),
-        const Duration(hours: 3),
+        nap.startUtc.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 1, 30)),
+        isTrue,
+      ); // 10:30 KST
+      expect(nap.endUtc!.isAtSameMomentAs(meal1330), isTrue);
+      expect(
+        rest
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.title == '식사' &&
+                  e.startUtc.isAtSameMomentAs(meal1330),
+            )
+            .startUtc
+            .isAtSameMomentAs(meal1330),
+        isTrue,
       );
       expect(
-        events.singleWhere((e) => e.detail == '일어난 뒤 먹어요.').startUtc,
-        nap.endUtc,
+        rest
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(meal18),
+            )
+            .startUtc
+            .isAtSameMomentAs(meal18),
+        isTrue,
+      );
+      expect(
+        rest.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(deadline),
+        ),
+        isEmpty,
+      );
+      expect(
+        rest
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.mealDeadline &&
+                  e.startUtc.isAtSameMomentAs(deadline),
+            )
+            .title,
+        '식사 마감',
+      );
+      expect(rest.where((e) => e.title == '간식'), isEmpty);
+      expect(
+        rest.where((e) => e.detail == '가볍게 먹고 바로 쉬어요.'),
+        isEmpty,
+      );
+      final night = _sleeps(rest).singleWhere(
+        (e) => e.startUtc.isAtSameMomentAs(nightBed),
+      );
+      expect(night.endUtc!.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 22)), isTrue);
+
+      final mealFirst = buildGuideEvents(
+        schedule,
+        outbound: outbound,
+        settings: UserSettings.defaults.copyWith(
+          arrivalOrder: ArrivalOrder.mealFirst,
+        ),
+      );
+      expect(
+        mealFirst.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isBefore(schedule.staUtc),
+        ),
+        isEmpty,
+      );
+      // 09:00 defer + light meal merge at 09:30; 13:00 → 13:30 kept.
+      final light = mealFirst.singleWhere(
+        (e) =>
+            e.kind == GuideEventKind.meal &&
+            e.detail == '가볍게 먹고 바로 쉬어요.',
+      );
+      expect(light.title, '식사');
+      expect(light.startUtc.isAtSameMomentAs(hotel), isTrue);
+      expect(
+        mealFirst.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(hotel),
+        ),
+        hasLength(1),
+      );
+      expect(
+        mealFirst.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(meal13),
+        ),
+        isEmpty,
+      );
+      expect(
+        mealFirst
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.title == '식사' &&
+                  e.detail == '식사.' &&
+                  e.startUtc.isAtSameMomentAs(meal1330),
+            )
+            .startUtc
+            .isAtSameMomentAs(meal1330),
+        isTrue,
+      );
+      expect(
+        mealFirst
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(meal18),
+            )
+            .startUtc
+            .isAtSameMomentAs(meal18),
+        isTrue,
+      );
+      expect(
+        mealFirst
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.mealDeadline &&
+                  e.startUtc.isAtSameMomentAs(deadline),
+            )
+            .startUtc
+            .isAtSameMomentAs(deadline),
+        isTrue,
+      );
+      expect(
+        mealFirst.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(deadline),
+        ),
+        isEmpty,
+      );
+      expect(mealFirst.where((e) => e.title == '간식'), isEmpty);
+    });
+
+    test('day 17:00 arrival: both orders defer 18:00 dinner to hotel 18:30', () {
+      final schedule = _seoulEveningArrival();
+      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
+      expect(
+        hotel.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 9, 30)),
+        isTrue,
+      ); // 18:30 KST
+      final nightBed = DateTime.utc(2026, 11, 30, 14); // 23:00 KST
+      final deadline = nightBed.subtract(kMealLead); // 21:00 KST
+      final nextMorning = DateTime.utc(2026, 11, 30, 22); // 07:00 KST Dec 1
+      final day2Meal09 = DateTime.utc(2026, 12, 1, 0); // 09:00 KST
+      final day2Meal13 = DateTime.utc(2026, 12, 1, 4); // 13:00 KST
+      final day2Meal18 = DateTime.utc(2026, 12, 1, 9); // 18:00 KST
+
+      List<String> mealFingerprint(List<GuideEvent> events) => events
+          .where((e) => e.kind == GuideEventKind.meal)
+          .map((e) => '${e.startUtc.toIso8601String()}|${e.title}|${e.detail}')
+          .toList()
+        ..sort();
+
+      List<String>? shared;
+      for (final order in ArrivalOrder.values) {
+        final events = _blocks(
+          schedule,
+          settings: UserSettings.defaults.copyWith(arrivalOrder: order),
+        );
+        final night = _sleeps(events).firstWhere(
+          (e) => e.startUtc.isAtSameMomentAs(nightBed),
+        );
+        expect(
+          night.endUtc!.isAtSameMomentAs(nextMorning),
+          isTrue,
+        );
+        expect(
+          events.where((e) => e.detail.contains('밤샘 비행 뒤')),
+          isEmpty,
+        );
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                e.startUtc.isBefore(hotel),
+          ),
+          isEmpty,
+        );
+        // 18:00 KST (+30m ≤ 1h) → hotel 18:30 dinner.
+        expect(
+          events
+              .singleWhere(
+                (e) =>
+                    e.kind == GuideEventKind.meal &&
+                    e.title == '식사' &&
+                    e.startUtc.isAtSameMomentAs(hotel),
+              )
+              .startUtc
+              .isAtSameMomentAs(hotel),
+          isTrue,
+        );
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                e.startUtc.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 9)),
+          ),
+          isEmpty,
+        ); // original 18:00 gone
+        expect(
+          events.where((e) => e.title == '간식'),
+          isEmpty,
+        );
+        expect(
+          events
+              .singleWhere(
+                (e) =>
+                    e.kind == GuideEventKind.mealDeadline &&
+                    e.startUtc.isAtSameMomentAs(deadline),
+              )
+              .startUtc
+              .isAtSameMomentAs(deadline),
+          isTrue,
+        );
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                e.startUtc.isAtSameMomentAs(deadline),
+          ),
+          isEmpty,
+        );
+        for (final at in [day2Meal09, day2Meal13, day2Meal18]) {
+          expect(
+            events.any(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(at),
+            ),
+            isTrue,
+            reason: at.toIso8601String(),
+          );
+        }
+        shared ??= mealFingerprint(events);
+        expect(mealFingerprint(events), shared);
+      }
+    });
+
+    test('night 21:00 KST arrival: both orders same; deadline after hotel', () {
+      final schedule = _seoulLateNightArrival();
+      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
+      expect(
+        hotel.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 13, 30)),
+        isTrue,
+      ); // 22:30 KST
+      final ready = schedule.staUtc.add(UserSettings.defaults.arrivalToSleep);
+      expect(
+        ready.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 14, 30)),
+        isTrue,
+      ); // 23:30 KST earliest start
+      final firstBed = DateTime.utc(2026, 11, 30, 16); // 01:00 KST
+      final deadline = firstBed.subtract(kMealLead); // 23:00 KST = 14:00Z
+      final day2Meal09 = DateTime.utc(2026, 12, 1, 0);
+      final day2Meal13 = DateTime.utc(2026, 12, 1, 4);
+      final day2Meal18 = DateTime.utc(2026, 12, 1, 9);
+
+      List<String> mealFingerprint(List<GuideEvent> events) => events
+          .where((e) => e.kind == GuideEventKind.meal)
+          .map((e) => '${e.startUtc.toIso8601String()}|${e.title}|${e.detail}')
+          .toList()
+        ..sort();
+
+      List<String>? shared;
+      for (final order in ArrivalOrder.values) {
+        final events = buildGuideEvents(
+          schedule,
+          settings: UserSettings.defaults.copyWith(arrivalOrder: order),
+        );
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                e.startUtc.isBefore(schedule.staUtc),
+          ),
+          isEmpty,
+        );
+        final first = _sleeps(events).first;
+        expect(first.startUtc.isAtSameMomentAs(firstBed), isTrue);
+        expect(
+          first.endUtc!.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 22)),
+          isTrue,
+        ); // 07:00 KST
+        expect(!first.startUtc.isBefore(ready), isTrue);
+        expect(
+          events.where((e) => e.detail.contains('밤샘 비행 뒤')),
+          isEmpty,
+        );
+        expect(events.where((e) => e.title == '간식'), isEmpty);
+        // Arrival-day 18:00 is still in transit.
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                e.startUtc.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 9)),
+          ),
+          isEmpty,
+        );
+        expect(
+          events
+              .singleWhere(
+                (e) =>
+                    e.kind == GuideEventKind.mealDeadline &&
+                    e.startUtc.isAtSameMomentAs(deadline),
+              )
+              .startUtc
+              .isAtSameMomentAs(deadline),
+          isTrue,
+        );
+        expect(
+          events.where(
+            (e) =>
+                e.kind == GuideEventKind.meal && e.startUtc.isBefore(hotel),
+          ),
+          isEmpty,
+        );
+        for (final at in [day2Meal09, day2Meal13, day2Meal18]) {
+          expect(
+            events.any(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(at),
+            ),
+            isTrue,
+            reason: at.toIso8601String(),
+          );
+        }
+        shared ??= mealFingerprint(events);
+        expect(mealFingerprint(events), shared);
+      }
+    });
+
+    test('mid-stay day keeps 09/13/18 and omits meals after deadline', () {
+      final schedule = _seoulEveningArrival();
+      final events = _blocks(schedule);
+      final day2 = DateTime.utc(2026, 12, 1);
+      final meals = events
+          .where(
+            (e) =>
+                e.kind == GuideEventKind.meal &&
+                !e.startUtc.isBefore(day2) &&
+                e.startUtc.isBefore(day2.add(const Duration(days: 1))),
+          )
+          .map((e) => e.startUtc)
+          .toList()
+        ..sort();
+      expect(meals, hasLength(3));
+      expect(meals[0].isAtSameMomentAs(DateTime.utc(2026, 12, 1, 0)), isTrue);
+      expect(meals[1].isAtSameMomentAs(DateTime.utc(2026, 12, 1, 4)), isTrue);
+      expect(meals[2].isAtSameMomentAs(DateTime.utc(2026, 12, 1, 9)), isTrue);
+      final night = _sleeps(events).firstWhere(
+        (e) => e.startUtc.isAtSameMomentAs(DateTime.utc(2026, 12, 1, 14)),
+      );
+      final deadline = night.startUtc.subtract(kMealLead);
+      expect(
+        events.any(
+          (e) =>
+              e.kind == GuideEventKind.mealDeadline &&
+              e.startUtc.isAtSameMomentAs(deadline),
+        ),
+        isTrue,
+      );
+      expect(
+        events.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              !e.startUtc.isBefore(deadline) &&
+              e.startUtc.isBefore(night.startUtc),
+        ),
+        isEmpty,
       );
     });
 
-    test('day 17:00 arrival: hotel 18:30, 21:00 pre-sleep meal, no overnight nap', () {
-      final schedule = _seoulEveningArrival();
-      final events = _blocks(schedule);
-      final hotel = UserSettings.defaults.hotelArrivalUtc(schedule.staUtc);
-      expect(hotel, DateTime.utc(2026, 11, 30, 9, 30)); // 17:00 KST + 90m → 18:30 KST = 09:30Z
+    test('departure pull: lunch 13:00 → pickup 12:00; 10:00 omits', () {
+      final stay = _seoulEveningArrival();
+      final lunch = DateTime.utc(2026, 12, 1, 4); // 13:00 KST
+      final pullOk = DateTime.utc(2026, 12, 1, 3); // 12:00 KST
+      final pullFar = DateTime.utc(2026, 12, 1, 1); // 10:00 KST
 
-      final night = _sleeps(events).firstWhere(
-        (e) => e.startUtc.isAtSameMomentAs(DateTime.utc(2026, 11, 30, 14)), // 23:00 KST
+      final pulled = _blocks(
+        stay.copyWith(pickupUtc: pullOk, stdUtc: pullOk.add(const Duration(hours: 4))),
       );
       expect(
-        events.where((e) => e.detail.contains('밤샘 비행 뒤')),
+        pulled
+            .singleWhere(
+              (e) =>
+                  e.kind == GuideEventKind.meal &&
+                  e.startUtc.isAtSameMomentAs(pullOk),
+            )
+            .startUtc
+            .isAtSameMomentAs(pullOk),
+        isTrue,
+      );
+      expect(
+        pulled.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              e.startUtc.isAtSameMomentAs(lunch),
+        ),
         isEmpty,
       );
-      final dinner = events.singleWhere(
-        (e) =>
-            e.kind == GuideEventKind.meal &&
-            e.detail == '잠들기 전 식사.' &&
-            e.startUtc.isAtSameMomentAs(night.startUtc.subtract(kMealLead)),
+
+      final omitted = _blocks(
+        stay.copyWith(
+          pickupUtc: pullFar,
+          stdUtc: pullFar.add(const Duration(hours: 4)),
+        ),
       );
-      expect(dinner.startUtc, DateTime.utc(2026, 11, 30, 12)); // 21:00 KST
-      // gap hotel→night = 4h30 ≥ kMealLead, so no arrival snack path.
-      expect(events.where((e) => e.title == '간식'), isEmpty);
+      expect(
+        omitted.where(
+          (e) =>
+              e.kind == GuideEventKind.meal &&
+              (e.startUtc.isAtSameMomentAs(lunch) ||
+                  e.startUtc.isAtSameMomentAs(pullFar)),
+        ),
+        isEmpty,
+      );
     });
   });
 
@@ -542,15 +910,24 @@ void main() {
   test('f) new copy avoids forbidden medical words', () {
     final texts = <String>[
       '가볍게 먹고 바로 쉬어요.',
-      '배고프면 가볍게만 먹고 쉬어요. 식사는 일어난 뒤에 해요.',
-      '일어난 뒤 먹어요.',
+      '이 시각 이후 식사는 두지 않습니다.',
+      '식사 마감',
       '밤샘 비행 뒤 짧은 낮잠이에요. 밤 수면 전에 끝나게 잡았어요.',
       '저녁에 서쪽으로 떠나는 편이에요. 한국시간을 그대로 두는 날이라 출발 전 수면이 특히 중요해요.',
-      '도착 후 식사와 수면 사이가 2시간보다 짧을 때 순서를 고릅니다.',
-      '램프 도착부터 잠들기까지 합계 2시간 30분. 식사는 호텔 도착(하기+이동) 뒤에 둘 수 있어요.',
+      '휴식 먼저가 기본입니다. 도착 후 낮잠과 기본 식사 시각(09·13·18)이 '
+          '겹칠 때만 이 순서를 씁니다. 식사 먼저는 호텔 도착에 가벼운 식사를 '
+          '더하고 겹친 끼니는 낮잠 뒤로 미룹니다. 휴식 먼저는 겹친 끼니만 '
+          '낮잠 뒤로 미룹니다(각 ±1시간). 호텔 도착 전·출발 후 끼니도 같은 '
+          '폭 안에서 호텔 도착·출발로 옮기고, 폭을 넘으면 생략합니다. '
+          '잠들기 2시간 전은 끼니가 아니라 식사 마감선입니다.',
+      '식사는 모드 시계 09:00·13:00·18:00에 호텔에 있으면 두고, '
+          '호텔 도착 전·출발 후는 ±1시간 안에서만 옮기며 폭을 넘으면 생략해요. '
+          '잠들기 2시간 전은 식사 마감선입니다.',
       '하기·입국',
       '호텔 이동',
       '호텔 도착 후 준비',
+      '휴식 먼저',
+      '식사 먼저',
     ];
     const forbidden = ['권장', '치료', '처방', '진단', '효과'];
     final joined = texts.join('\n');
@@ -593,26 +970,7 @@ JetlagScheduleSnapshot _sfoSample() {
   );
 }
 
-JetlagScheduleSnapshot _seoulDayArrival() {
-  return JetlagScheduleSnapshot(
-    stationLabel: 'SFO',
-    localTimeZone: 'Asia/Seoul',
-    referenceTimeZone: 'Asia/Seoul',
-    staUtc: DateTime.utc(2026, 11, 30, 8),
-    stdUtc: DateTime.utc(2026, 12, 1, 4, 20),
-    pickupUtc: zonedUtc(
-      iana: 'Asia/Seoul',
-      year: 2026,
-      month: 11,
-      day: 30,
-      hour: 18,
-      minute: 45,
-    ),
-    flightNumber: 'XX000',
-  );
-}
-
-/// 17:00 KST arrival; night sleep 23:00 → hotel 18:30, pre-sleep meal 21:00.
+/// 17:00 KST arrival; night sleep 23:00 → hotel 18:30, meal deadline 21:00.
 JetlagScheduleSnapshot _seoulEveningArrival() {
   final sta = zonedUtc(
     iana: 'Asia/Seoul',
@@ -620,6 +978,26 @@ JetlagScheduleSnapshot _seoulEveningArrival() {
     month: 11,
     day: 30,
     hour: 17,
+    minute: 0,
+  );
+  return JetlagScheduleSnapshot(
+    stationLabel: 'ICN',
+    localTimeZone: 'Asia/Seoul',
+    referenceTimeZone: 'Asia/Seoul',
+    staUtc: sta,
+    stdUtc: sta.add(const Duration(days: 2)),
+    flightNumber: 'XX000',
+  );
+}
+
+/// 21:00 KST ramp arrival; hotel 22:30. Earliest sleep 23:30, but default\n/// 7h target packs 4 cycles ending at 07:00, so first night is 01:00–07:00.
+JetlagScheduleSnapshot _seoulLateNightArrival() {
+  final sta = zonedUtc(
+    iana: 'Asia/Seoul',
+    year: 2026,
+    month: 11,
+    day: 30,
+    hour: 21,
     minute: 0,
   );
   return JetlagScheduleSnapshot(

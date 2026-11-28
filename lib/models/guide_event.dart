@@ -2,6 +2,7 @@ enum GuideEventKind {
   arrival,
   light,
   meal,
+  mealDeadline,
   caffeine,
   sleep,
   loggedSleep,

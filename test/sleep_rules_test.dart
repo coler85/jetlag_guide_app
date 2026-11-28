@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jetlag_guide_app/logic/guide_plan.dart';
 import 'package:jetlag_guide_app/logic/jetlag_clock.dart';
+import 'package:jetlag_guide_app/logic/sleep_constants.dart';
 import 'package:jetlag_guide_app/models/guide_event.dart';
 import 'package:jetlag_guide_app/models/jetlag_schedule.dart';
 import 'package:jetlag_guide_app/models/lifestyle.dart';
@@ -145,7 +146,7 @@ void main() {
     );
   });
 
-  test('a 3 hour gap stays two sleeps with a meal between them', () {
+  test('a 3 hour gap stays two sleeps without a sleep-minus-2h meal', () {
     final schedule = _nightGapSchedule();
     final events = _events(schedule, settings: _gapSettings(0));
     final sleeps = _sleepsAfter(schedule.staUtc, events);
@@ -157,14 +158,16 @@ void main() {
       sleeps.last.startUtc.difference(sleeps.first.endUtc!),
       const Duration(hours: 3),
     );
-    final meals = events.where((event) => event.kind == GuideEventKind.meal);
+    // 보완 9g: no automatic meal at sleep − kMealLead.
     expect(
-      meals.where(
-        (meal) =>
-            meal.startUtc.isAfter(sleeps.first.endUtc!) &&
-            meal.startUtc.isBefore(sleeps.last.startUtc),
+      events.where(
+        (event) =>
+            event.kind == GuideEventKind.meal &&
+            event.startUtc.isAtSameMomentAs(
+              sleeps.last.startUtc.subtract(kMealLead),
+            ),
       ),
-      isNotEmpty,
+      isEmpty,
     );
   });
 

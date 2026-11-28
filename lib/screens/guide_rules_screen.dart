@@ -34,6 +34,7 @@ class GuideRulesScreen extends StatelessWidget {
     final gap = _durationLabel(kSleepMergeGap);
     final sleepSoon = _durationLabel(kArrivalSleepSoon);
     final mealLead = _durationLabel(kMealLead);
+    final mealShift = _durationLabel(kMealShift);
     final napMax = _durationLabel(
       Duration(minutes: kSleepCycle.inMinutes * kNapMaxCycles),
     );
@@ -59,16 +60,16 @@ class GuideRulesScreen extends StatelessWidget {
         body:
             '도착 후 잠들기까지($arrival)는 하기·입국($deboard) + 호텔 이동($transfer) + '
             '호텔 도착 후 준비($afterHotel)입니다. STA는 램프 도착입니다. '
-            '식사는 호텔 도착(하기+이동, $hotelDelay 뒤) 이후에 두고, '
-            '수면은 그 뒤 준비까지 기다린 뒤에 둡니다. '
+            '수면은 호텔 도착(하기+이동, $hotelDelay 뒤) 후 준비까지 기다린 뒤에 둡니다. '
             '착륙 후 도착 후 잠들기까지($arrival)가 지난 뒤부터 '
             '모드 기상 시각까지 잠을 둡니다. '
             '$cycle이 안 되면 다음 취침으로 넘깁니다. '
-            '호텔 도착 후 $sleepSoon 안에 시작하는 첫 수면은 도착 직후 수면으로 보고, '
-            '도착 후 순서(지금: $orderLabel)로 식사와 수면 사이를 잡습니다. '
-            '호텔 도착과 수면 사이가 $mealLead보다 짧으면 '
-            '자동·먼저 휴식은 간식 뒤 수면·일어난 뒤 식사로, '
-            '먼저 식사는 호텔 도착 식사로 둡니다.',
+            '호텔 도착 후 $sleepSoon 안에 시작하는 첫 수면이 낮잠(모드 낮 시작)이고 '
+            '기본 식사 시각과 겹칠 때만 도착 후 순서(지금: $orderLabel)를 씁니다. '
+            '휴식 먼저가 기본입니다. 식사 먼저는 호텔 도착에 가벼운 식사를 더하고 '
+            '겹친 끼니는 낮잠 뒤로 미룹니다. 휴식 먼저는 겹친 끼니만 낮잠 뒤로 '
+            '미룹니다(각 ±$mealShift). 폭을 넘으면 그 끼니만 생략합니다. '
+            '도착 직후가 밤 수면만이면 설정과 무관하게 같은 식사가 나옵니다.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-inflight'),
@@ -118,7 +119,13 @@ class GuideRulesScreen extends StatelessWidget {
       _RuleSection(
         key: const ValueKey('guide-rules-meal-light'),
         title: '식사와 빛',
-        body: '식사는 잠들기 1~2시간 전까지 끝나게 두고, 빛 쬐기는 일어난 뒤에만 둡니다.',
+        body:
+            '식사는 모드 시계 09:00·13:00·18:00에 호텔에 있을 때만 두고, '
+            '호텔 도착 전·출발 후 끼니는 원래 시각 ±$mealShift 안·마감 전이면 '
+            '호텔 도착·출발 시각으로 한 번만 옮깁니다. 폭을 넘으면 생략합니다. '
+            '밤 수면은 잠들기 $mealLead 전을 식사 마감선으로 두고(끼니 아님), '
+            '그 시각 이후 식사는 두지 않습니다. 마감선도 호텔에 있을 때만 표시합니다. '
+            '빛 쬐기는 일어난 뒤에만 둡니다.',
       ),
       _RuleSection(
         key: const ValueKey('guide-rules-debt'),

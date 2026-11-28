@@ -34,9 +34,58 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('잠들기 1~2시간 전까지'), findsOneWidget);
+    expect(find.textContaining('식사는 모드 시계 09:00·13:00·18:00'), findsOneWidget);
+    expect(find.textContaining('식사 마감선'), findsWidgets);
     expect(find.byKey(const ValueKey('guide-rules-nap')), findsOneWidget);
     expect(find.textContaining('도착 후 순서'), findsWidgets);
+    expect(find.textContaining('휴식 먼저'), findsWidgets);
+    expect(find.textContaining('식사 먼저'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-arrival')),
+        matching: find.textContaining('기본 식사 시각과 겹칠 때만'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-arrival')),
+        matching: find.textContaining('휴식 먼저가 기본입니다'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-arrival')),
+        matching: find.textContaining('설정과 무관하게 같은 식사'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-meal-light')),
+        matching: find.textContaining('잠들기 2시간 전을 식사 마감선'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-meal-light')),
+        matching: find.textContaining('±1시간'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('guide-rules-arrival')),
+        matching: find.textContaining('가벼운 식사를 더하고'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('간식으로 바꾸거나'), findsNothing);
+    expect(find.textContaining('끼니 사이는'), findsNothing);
+    expect(find.textContaining('자동·먼저 휴식'), findsNothing);
+    expect(find.textContaining('먼저 식사'), findsNothing);
     expect(find.textContaining('밤샘 비행'), findsOneWidget);
     expect(find.textContaining('서쪽으로 떠날 때'), findsOneWidget);
     expect(

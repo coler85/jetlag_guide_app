@@ -4,9 +4,15 @@ const kSleepMergeGap = Duration(hours: 3);
 /// One sleep cycle. Blocks are whole multiples of this length.
 const kSleepCycle = Duration(minutes: 90);
 
-/// A meal is placed this long before sleep, and light stops this long before
-/// the next sleep.
+/// Night-sleep meal deadline: no meal at or after sleep start − this lead.
+/// Light also stops this long before the next sleep. Not a fixed meal slot.
 const kMealLead = Duration(hours: 2);
+
+/// Default meal times on the mode clock (09:00, 13:00, 18:00).
+const kDefaultMealMinutes = <int>[9 * 60, 13 * 60, 18 * 60];
+
+/// How far a default meal may move for hotel arrival, hotel leave, or nap end.
+const kMealShift = Duration(hours: 1);
 
 /// STA-to-first-sleep window that still counts as an immediate arrival sleep.
 const kArrivalSleepSoon = Duration(hours: 6);

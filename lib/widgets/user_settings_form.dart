@@ -119,7 +119,9 @@ class UserSettingsForm extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
             '램프 도착부터 잠들기까지 합계 ${_hoursMinutesLabel(settings.arrivalToSleep)}. '
-            '식사는 호텔 도착(하기+이동) 뒤에 둘 수 있어요.',
+            '식사는 모드 시계 09:00·13:00·18:00에 호텔에 있으면 두고, '
+            '호텔 도착 전·출발 후는 ±1시간 안에서만 옮기며 폭을 넘으면 생략해요. '
+            '잠들기 2시간 전은 식사 마감선입니다.',
             key: const ValueKey('settings-arrival-to-sleep'),
             style: JetlagTheme.caption,
           ),
@@ -217,7 +219,6 @@ class _ArrivalOrderRow extends StatelessWidget {
   final ValueChanged<ArrivalOrder> onChanged;
 
   static const _keys = <ArrivalOrder, ValueKey<String>>{
-    ArrivalOrder.auto: ValueKey('settings-arrival-order-auto'),
     ArrivalOrder.restFirst: ValueKey('settings-arrival-order-rest'),
     ArrivalOrder.mealFirst: ValueKey('settings-arrival-order-meal'),
   };
@@ -249,7 +250,12 @@ class _ArrivalOrderRow extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            '도착 후 식사와 수면 사이가 2시간보다 짧을 때 순서를 고릅니다.',
+            '휴식 먼저가 기본입니다. 도착 후 낮잠과 기본 식사 시각(09·13·18)이 '
+            '겹칠 때만 이 순서를 씁니다. 식사 먼저는 호텔 도착에 가벼운 식사를 '
+            '더하고 겹친 끼니는 낮잠 뒤로 미룹니다. 휴식 먼저는 겹친 끼니만 '
+            '낮잠 뒤로 미룹니다(각 ±1시간). 호텔 도착 전·출발 후 끼니도 같은 '
+            '폭 안에서 호텔 도착·출발로 옮기고, 폭을 넘으면 생략합니다. '
+            '잠들기 2시간 전은 끼니가 아니라 식사 마감선입니다.',
             style: JetlagTheme.caption,
           ),
         ],
