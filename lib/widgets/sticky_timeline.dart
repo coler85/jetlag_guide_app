@@ -26,6 +26,8 @@ class StickyTimeline extends StatelessWidget {
     required this.onBunk,
     required this.onDismissLog,
     this.onEditLoggedSleep,
+    this.clockAlarmWakeUtc,
+    this.onRegisterClockAlarm,
     this.lifestyle = JetlagLifestyle.kstAnchor,
     this.settings = UserSettings.defaults,
   });
@@ -40,6 +42,11 @@ class StickyTimeline extends StatelessWidget {
 
   /// Called with the sleep log id when a recorded sleep block is tapped.
   final ValueChanged<String>? onEditLoggedSleep;
+
+  /// Next planned wake inside 24h; when set with [onRegisterClockAlarm], the
+  /// matching sleep card shows a clock-app register control.
+  final DateTime? clockAlarmWakeUtc;
+  final VoidCallback? onRegisterClockAlarm;
   final JetlagLifestyle lifestyle;
   final UserSettings settings;
 
@@ -129,6 +136,15 @@ class StickyTimeline extends StatelessWidget {
     final logId = marker.event.kind == GuideEventKind.loggedSleep
         ? SleepLog.idFromEvent(marker.event.id)
         : null;
+    final wake = marker.event.alarmWakeUtc;
+    final clockWake = clockAlarmWakeUtc;
+    final registerClock =
+        wake != null &&
+            clockWake != null &&
+            onRegisterClockAlarm != null &&
+            wake.isAtSameMomentAs(clockWake)
+        ? onRegisterClockAlarm
+        : null;
     return GuideEventCard(
       event: marker.event,
       localClock: clocks.local,
@@ -139,6 +155,7 @@ class StickyTimeline extends StatelessWidget {
       onTap: logId == null || onEditLoggedSleep == null
           ? null
           : () => onEditLoggedSleep!(logId),
+      onRegisterClockAlarm: registerClock,
     );
   }
 }

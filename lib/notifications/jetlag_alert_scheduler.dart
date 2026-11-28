@@ -9,13 +9,21 @@ import 'jetlag_alert_channel.dart';
 abstract class JetlagAlertScheduler {
   Future<bool> ensureChannel();
   Future<bool> requestPermission();
-  Future<void> schedulePickupReminder({
+  Future<void> scheduleAlert({
     required int id,
     required DateTime whenUtc,
     required String title,
     required String body,
   });
   Future<void> cancel({required int id});
+  Future<void> cancelRange({required int start, required int count});
+  Future<bool> canScheduleExact();
+  Future<void> requestExactAlarm();
+  Future<void> scheduleTestAlert({
+    required DateTime whenUtc,
+    required String localIana,
+    required String homeIana,
+  });
 }
 
 class JetlagLocalAlertScheduler implements JetlagAlertScheduler {
@@ -78,7 +86,7 @@ class JetlagLocalAlertScheduler implements JetlagAlertScheduler {
   }
 
   @override
-  Future<void> schedulePickupReminder({
+  Future<void> scheduleAlert({
     required int id,
     required DateTime whenUtc,
     required String title,
@@ -88,19 +96,94 @@ class JetlagLocalAlertScheduler implements JetlagAlertScheduler {
       id >= JetlagAlertChannel.idRangeStart &&
           id <= JetlagAlertChannel.idRangeEnd,
     );
-    ensureJetlagTimeZones();
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: tz.TZDateTime.from(whenUtc.toUtc(), tz.UTC),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      notificationDetails: JetlagAlertChannel.notificationDetails,
-    );
+    try {
+      ensureJetlagTimeZones();
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: tz.TZDateTime.from(whenUtc.toUtc(), tz.UTC),
+        androidScheduleMode: await _androidScheduleMode(),
+        notificationDetails: JetlagAlertChannel.notificationDetails,
+      );
+    } catch (error, stack) {
+      debugPrint('jetlag alert schedule failed: $error\n$stack');
+    }
   }
 
   @override
   Future<void> cancel({required int id}) {
     return _plugin.cancel(id: id);
+  }
+
+  @override
+  Future<void> cancelRange({required int start, required int count}) async {
+    try {
+      for (var i = 0; i < count; i++) {
+        await _plugin.cancel(id: start + i);
+      }
+    } catch (error, stack) {
+      debugPrint('jetlag alert cancel range failed: $error\n$stack');
+    }
+  }
+
+  @override
+  Future<bool> canScheduleExact() async {
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      if (android == null) return true;
+      return await android.canScheduleExactNotifications() ?? false;
+    } catch (error, stack) {
+      debugPrint('jetlag exact alarm check failed: $error\n$stack');
+      return false;
+    }
+  }
+
+  @override
+  Future<void> requestExactAlarm() async {
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.requestExactAlarmsPermission();
+    } catch (error, stack) {
+      debugPrint('jetlag exact alarm request failed: $error\n$stack');
+    }
+  }
+
+  @override
+  Future<void> scheduleTestAlert({
+    required DateTime whenUtc,
+    required String localIana,
+    required String homeIana,
+  }) async {
+    try {
+      ensureJetlagTimeZones();
+      final when = whenUtc.toUtc();
+      await _plugin.zonedSchedule(
+        id: JetlagAlertChannel.testNotificationId,
+        title:
+            '테스트 ${formatHm(when, localIana)} · '
+            '홈 ${formatHm(when, homeIana)} '
+            '${zoneAbbreviation(when, homeIana)}',
+        body: '이 알림이 워치에도 보이면 연동이 된 거예요.',
+        scheduledDate: tz.TZDateTime.from(when, tz.UTC),
+        androidScheduleMode: await _androidScheduleMode(),
+        notificationDetails: JetlagAlertChannel.notificationDetails,
+      );
+    } catch (error, stack) {
+      debugPrint('jetlag test alert failed: $error\n$stack');
+    }
+  }
+
+  Future<AndroidScheduleMode> _androidScheduleMode() async {
+    final exact = await canScheduleExact();
+    return exact
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexactAllowWhileIdle;
   }
 }

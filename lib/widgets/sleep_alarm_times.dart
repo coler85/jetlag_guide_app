@@ -15,6 +15,7 @@ class SleepAlarmTimes extends StatelessWidget {
     required this.localTag,
     required this.homeIana,
     this.localStyle = JetlagTheme.localClock,
+    this.onRegisterClockAlarm,
   });
 
   final DateTime wakeUtc;
@@ -23,10 +24,14 @@ class SleepAlarmTimes extends StatelessWidget {
   final String homeIana;
   final TextStyle localStyle;
 
+  /// When set, shows a small clock-app register control under the times.
+  final VoidCallback? onRegisterClockAlarm;
+
   @override
   Widget build(BuildContext context) {
     final local = formatAlarmLocal(wakeUtc, localIana, localTag);
     final home = formatAlarmHome(wakeUtc, homeIana);
+    final onRegister = onRegisterClockAlarm;
     return Column(
       key: const ValueKey('sleep-alarm'),
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -61,6 +66,25 @@ class SleepAlarmTimes extends StatelessWidget {
           overflow: TextOverflow.fade,
           textAlign: TextAlign.end,
         ),
+        if (onRegister != null) ...[
+          const SizedBox(height: 4),
+          TextButton(
+            key: const ValueKey('sleep-clock-alarm'),
+            onPressed: onRegister,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(
+              '시계 알람 등록',
+              style: JetlagTheme.micro.copyWith(
+                color: JetlagTheme.textPrimary,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

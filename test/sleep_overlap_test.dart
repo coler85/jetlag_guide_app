@@ -231,16 +231,32 @@ class _QuietAlerts implements JetlagAlertScheduler {
   Future<void> cancel({required int id}) async {}
 
   @override
+  Future<void> cancelRange({required int start, required int count}) async {}
+
+  @override
   Future<bool> ensureChannel() async => false;
 
   @override
   Future<bool> requestPermission() async => false;
 
   @override
-  Future<void> schedulePickupReminder({
+  Future<void> scheduleAlert({
     required int id,
     required DateTime whenUtc,
     required String title,
     required String body,
+  }) async {}
+
+  @override
+  Future<bool> canScheduleExact() async => true;
+
+  @override
+  Future<void> requestExactAlarm() async {}
+
+  @override
+  Future<void> scheduleTestAlert({
+    required DateTime whenUtc,
+    required String localIana,
+    required String homeIana,
   }) async {}
 }

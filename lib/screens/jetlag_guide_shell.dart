@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../logic/jetlag_clock.dart';
 import '../models/jetlag_schedule.dart';
+import '../notifications/clock_alarm_launcher.dart';
 import '../notifications/jetlag_alert_scheduler.dart';
 import '../state/jetlag_guide_controller.dart';
 import '../state/jetlag_log_store.dart';
@@ -21,6 +22,7 @@ class JetlagGuideShell extends StatefulWidget {
     this.now,
     this.logStore = const JetlagLogStore(),
     this.alerts,
+    this.clockAlarms,
     this.homeBase,
   });
 
@@ -28,6 +30,7 @@ class JetlagGuideShell extends StatefulWidget {
   final DateTime Function()? now;
   final JetlagLogStore logStore;
   final JetlagAlertScheduler? alerts;
+  final ClockAlarmLauncher? clockAlarms;
 
   /// Injected home-base state. The shell owns it and disposes it with the
   /// controller. Tests use this to hold loading open until preferences arrive.
@@ -49,6 +52,7 @@ class _JetlagGuideShellState extends State<JetlagGuideShell> {
       now: widget.now,
       logStore: widget.logStore,
       alerts: widget.alerts ?? JetlagLocalAlertScheduler(),
+      clockAlarms: widget.clockAlarms,
       homeBase: widget.homeBase,
     );
     unawaited(_controller.load());

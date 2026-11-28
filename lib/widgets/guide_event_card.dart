@@ -15,6 +15,7 @@ class GuideEventCard extends StatelessWidget {
     this.localTag,
     this.homeIana,
     this.onTap,
+    this.onRegisterClockAlarm,
   });
 
   final GuideEvent event;
@@ -26,6 +27,9 @@ class GuideEventCard extends StatelessWidget {
   final String? localTag;
   final String? homeIana;
   final VoidCallback? onTap;
+
+  /// Optional; when null the clock-alarm control stays hidden (layout tests).
+  final VoidCallback? onRegisterClockAlarm;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +79,7 @@ class GuideEventCard extends StatelessWidget {
                       localIana: localZone,
                       localTag: tag,
                       homeIana: homeZone,
+                      onRegisterClockAlarm: onRegisterClockAlarm,
                     )
                   else ...[
                     FittedBox(
@@ -135,6 +140,7 @@ class _SleepClockWithAlarm extends StatelessWidget {
     required this.localIana,
     required this.localTag,
     required this.homeIana,
+    this.onRegisterClockAlarm,
   });
 
   final String localClock;
@@ -143,6 +149,7 @@ class _SleepClockWithAlarm extends StatelessWidget {
   final String localIana;
   final String localTag;
   final String homeIana;
+  final VoidCallback? onRegisterClockAlarm;
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +195,7 @@ class _SleepClockWithAlarm extends StatelessWidget {
           localIana: localIana,
           localTag: localTag,
           homeIana: homeIana,
+          onRegisterClockAlarm: onRegisterClockAlarm,
         ),
       ],
     );

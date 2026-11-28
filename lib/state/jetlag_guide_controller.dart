@@ -11,6 +11,9 @@ import '../models/jetlag_schedule.dart';
 import '../models/lifestyle.dart';
 import '../models/sleep_log.dart';
 import '../models/user_settings.dart';
+import '../notifications/clock_alarm_launcher.dart';
+import '../notifications/clock_alarm_plan.dart';
+import '../notifications/guide_alert_plan.dart';
 import '../notifications/jetlag_alert_channel.dart';
 import '../notifications/jetlag_alert_scheduler.dart';
 import 'flight_schedule_store.dart';
@@ -24,6 +27,7 @@ class JetlagGuideController extends ChangeNotifier {
     JetlagScheduleSnapshot? schedule,
     required this.logStore,
     required this.alerts,
+    ClockAlarmLauncher? clockAlarms,
     DateTime Function()? now,
     JetLagState? homeBase,
     JetLagCalculator? calculator,
@@ -31,6 +35,7 @@ class JetlagGuideController extends ChangeNotifier {
     SleepLogStore? sleepLogStore,
     FlightScheduleStore? scheduleStore,
   }) : _schedule = schedule,
+       clockAlarms = clockAlarms ?? defaultClockAlarmLauncher(),
        _now = now ?? _readUtcNow,
        role = schedule?.crewRole ?? JetlagCrewRole.flightOps,
        _home = homeBase ?? JetLagState(),
@@ -44,6 +49,7 @@ class JetlagGuideController extends ChangeNotifier {
 
   final JetlagLogStore logStore;
   final JetlagAlertScheduler alerts;
+  final ClockAlarmLauncher clockAlarms;
   final DateTime Function() _now;
 
   /// Device clock as an absolute UTC instant. Wall-clock fields are display-only.
@@ -66,11 +72,20 @@ class JetlagGuideController extends ChangeNotifier {
   FlightScheduleInput? journey;
   List<CrewLog> logs = const [];
   List<SleepLog> sleepLogs = const [];
-  bool alertsEnabled = false;
+  bool caffeineAlertsEnabled = false;
+  bool mealAlertsEnabled = false;
+  bool bedAlertsEnabled = false;
+
+  /// Null until [refreshExactAlarmPermission] or a switch/resume check runs.
+  bool? exactAlarmsAllowed;
   int _lifestyleEpoch = 0;
   int _settingsEpoch = 0;
   bool _ready = false;
   bool _disposed = false;
+  String? _caffeineSignature;
+  String? _mealSignature;
+  String? _bedSignature;
+  int _guideSyncGeneration = 0;
 
   JetLagTimeline? _timeline;
 
@@ -78,6 +93,19 @@ class JetlagGuideController extends ChangeNotifier {
 
   /// True while the timeline is showing the unsaved sample layover.
   bool get isSampleSchedule => _sampleSchedule && hasSchedule;
+
+  bool get anyGuideAlertsEnabled =>
+      caffeineAlertsEnabled || mealAlertsEnabled || bedAlertsEnabled;
+
+  ClockAlarmPlan? get nextClockWake {
+    if (!hasSchedule) return null;
+    return planNextClockWake(events: timeline.events, nowUtc: now());
+  }
+
+  ClockAlarmPlan? get nextWakeupCall {
+    if (!hasSchedule) return null;
+    return planNextWakeupCall(pickupUtc: schedule.pickupUtc, nowUtc: now());
+  }
 
   Future<void> _tail = Future<void>.value();
   int _serial = 0;
@@ -120,8 +148,6 @@ class JetlagGuideController extends ChangeNotifier {
       logs = loadedLogs;
       sleepLogs = loadedSleep;
       _publish();
-      if (!_current(revision) || !alertsEnabled) return;
-      await _syncPickupAlert();
     });
   }
 
@@ -138,9 +164,13 @@ class JetlagGuideController extends ChangeNotifier {
     _publish();
     return _lock(() async {
       await _scheduleStore.clear();
-      if (!_current(revision) || !alertsEnabled) return;
+      if (!_current(revision)) return;
       try {
-        await alerts.cancel(id: JetlagAlertChannel.pickupNotificationId);
+        await _cancelAllGuideAlerts();
+        await _cancelLegacyAlerts();
+        _caffeineSignature = null;
+        _mealSignature = null;
+        _bedSignature = null;
       } catch (error, stack) {
         debugPrint('jetlag clear alert failed: $error\n$stack');
       }
@@ -189,7 +219,12 @@ class JetlagGuideController extends ChangeNotifier {
         }
         final prefs = await SharedPreferences.getInstance();
         if (!_disposed) {
-          alertsEnabled = prefs.getBool(JetlagAlertChannel.enabledKey) ?? false;
+          caffeineAlertsEnabled =
+              prefs.getBool(JetlagAlertChannel.caffeineEnabledKey) ?? false;
+          mealAlertsEnabled =
+              prefs.getBool(JetlagAlertChannel.mealEnabledKey) ?? false;
+          bedAlertsEnabled =
+              prefs.getBool(JetlagAlertChannel.bedEnabledKey) ?? false;
           if (epoch == _lifestyleEpoch) {
             lifestyle = JetlagLifestyle.fromName(
               prefs.getString(JetlagLifestyle.preferenceKey),
@@ -204,10 +239,14 @@ class JetlagGuideController extends ChangeNotifier {
           _publish();
         }
       }
-      if (_disposed || !alertsEnabled || _schedule == null) return;
+      if (_disposed) return;
       if (!_current(revision)) return;
+      await _cancelLegacyAlerts();
+      if (_schedule == null || !anyGuideAlertsEnabled) return;
       final ready = await alerts.ensureChannel();
-      if (ready && _current(revision)) await _syncPickupAlert();
+      if (ready && _current(revision)) {
+        await _syncGuideAlerts();
+      }
     });
   }
 
@@ -366,62 +405,288 @@ class JetlagGuideController extends ChangeNotifier {
       if (!_sampleSchedule && _current(revision)) {
         await _scheduleStore.save(saved);
       }
-      if (!_current(revision) || !alertsEnabled) return;
-      await _syncPickupAlert();
     });
   }
 
-  /// Returns false when the dedicated channel could not be armed.
-  Future<bool> setAlertsEnabled(bool enabled) {
-    return _lock(() async {
+  Future<bool> setCaffeineAlertsEnabled(bool enabled) => _setGuideAlertEnabled(
+    enabled: enabled,
+    write: (value) => caffeineAlertsEnabled = value,
+    key: JetlagAlertChannel.caffeineEnabledKey,
+    clearSignature: () => _caffeineSignature = null,
+    cancel: () => alerts.cancelRange(
+      start: JetlagAlertChannel.caffeineIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
+    ),
+  );
+
+  Future<bool> setMealAlertsEnabled(bool enabled) => _setGuideAlertEnabled(
+    enabled: enabled,
+    write: (value) => mealAlertsEnabled = value,
+    key: JetlagAlertChannel.mealEnabledKey,
+    clearSignature: () => _mealSignature = null,
+    cancel: () => alerts.cancelRange(
+      start: JetlagAlertChannel.mealIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
+    ),
+  );
+
+  Future<bool> setBedAlertsEnabled(bool enabled) => _setGuideAlertEnabled(
+    enabled: enabled,
+    write: (value) => bedAlertsEnabled = value,
+    key: JetlagAlertChannel.bedEnabledKey,
+    clearSignature: () => _bedSignature = null,
+    cancel: () => alerts.cancelRange(
+      start: JetlagAlertChannel.bedIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
+    ),
+  );
+
+  Future<bool> _setGuideAlertEnabled({
+    required bool enabled,
+    required void Function(bool value) write,
+    required String key,
+    required void Function() clearSignature,
+    required Future<void> Function() cancel,
+  }) async {
+    final ok = await _lock(() async {
       if (!enabled) {
-        alertsEnabled = false;
-        await _writeEnabled(false);
-        await alerts.cancel(id: JetlagAlertChannel.pickupNotificationId);
+        write(false);
+        await _writeBool(key, false);
+        await cancel();
+        clearSignature();
         _publish();
         return true;
       }
       final allowed = await alerts.requestPermission();
       final ready = allowed && await alerts.ensureChannel();
       if (!ready) {
-        alertsEnabled = false;
-        await _writeEnabled(false);
+        write(false);
         _publish();
         return false;
       }
-      alertsEnabled = true;
-      await _writeEnabled(true);
-      await _syncPickupAlert();
+      write(true);
+      await _writeBool(key, true);
+      await _syncGuideAlerts();
       _publish();
       return true;
     });
+    if (ok && enabled) await _promptExactAlarmIfNeeded();
+    return ok;
   }
 
-  Future<void> _syncPickupAlert() async {
-    final schedule = _schedule;
-    if (schedule == null) return;
-    final pickup = schedule.pickupUtc?.toUtc();
-    final id = JetlagAlertChannel.pickupNotificationId;
-    if (pickup == null) {
-      await alerts.cancel(id: id);
+  Future<bool> canScheduleExactAlarm() => alerts.canScheduleExact();
+
+  Future<void> requestExactAlarm() => alerts.requestExactAlarm();
+
+  /// Reads exact-alarm permission and notifies when the cached value changes.
+  Future<void> refreshExactAlarmPermission() async {
+    final allowed = await alerts.canScheduleExact();
+    if (_disposed) return;
+    if (exactAlarmsAllowed == allowed) return;
+    exactAlarmsAllowed = allowed;
+    notifyListeners();
+  }
+
+  /// Re-checks exact alarms after returning from the system settings screen.
+  Future<void> onAppResumed() async {
+    final allowed = await alerts.canScheduleExact();
+    if (_disposed) return;
+    if (exactAlarmsAllowed == allowed) return;
+    exactAlarmsAllowed = allowed;
+    notifyListeners();
+    await _lock(() async {
+      if (_disposed || !anyGuideAlertsEnabled) return;
+      _caffeineSignature = null;
+      _mealSignature = null;
+      _bedSignature = null;
+      await _syncGuideAlerts();
+    });
+  }
+
+  /// Opens the exact-alarm settings screen when still denied. Outside [_lock].
+  Future<void> _promptExactAlarmIfNeeded() async {
+    final exact = await alerts.canScheduleExact();
+    if (_disposed) return;
+    if (exactAlarmsAllowed != exact) {
+      exactAlarmsAllowed = exact;
+      notifyListeners();
+    }
+    if (!exact) await alerts.requestExactAlarm();
+  }
+
+  /// Returns false when permission or the channel is missing.
+  Future<bool> scheduleTestAlert() async {
+    final allowed = await alerts.requestPermission();
+    if (!allowed || !await alerts.ensureChannel()) return false;
+    final localIana = _schedule?.localTimeZone ?? homeBaseTimezone;
+    await alerts.scheduleTestAlert(
+      whenUtc: now().add(const Duration(seconds: 60)),
+      localIana: localIana,
+      homeIana: homeBaseTimezone,
+    );
+    return true;
+  }
+
+  /// Opens the clock app for [whenUtc] when it is still inside the 24h window.
+  Future<void> registerClockAlarm({
+    required DateTime whenUtc,
+    required String message,
+  }) async {
+    if (!clockAlarms.isSupported) return;
+    final when = whenUtc.toUtc();
+    if (!isClockAlarmWithinWindow(when, now())) return;
+    final local = clockAlarmDeviceLocal(when);
+    try {
+      await clockAlarms.setAlarm(
+        hour: local.hour,
+        minutes: local.minute,
+        message: message,
+      );
+    } catch (error, stack) {
+      debugPrint('jetlag clock alarm failed: $error\n$stack');
+    }
+  }
+
+  Future<void> _syncGuideAlerts() async {
+    final generation = ++_guideSyncGeneration;
+    try {
+      if (_schedule == null) {
+        if (_caffeineSignature == null &&
+            _mealSignature == null &&
+            _bedSignature == null) {
+          return;
+        }
+        await _cancelAllGuideAlerts();
+        if (generation != _guideSyncGeneration || _disposed) return;
+        _caffeineSignature = null;
+        _mealSignature = null;
+        _bedSignature = null;
+        return;
+      }
+
+      final ready = anyGuideAlertsEnabled ? await alerts.ensureChannel() : true;
+      if (!ready || generation != _guideSyncGeneration || _disposed) return;
+
+      await _syncOneGuideKind(
+        enabled: caffeineAlertsEnabled,
+        generation: generation,
+        signature: () => _caffeineSignature,
+        setSignature: (value) => _caffeineSignature = value,
+        plan: () => planCaffeineAlerts(
+          events: timeline.events,
+          nowUtc: now(),
+          localIana: schedule.localTimeZone,
+          homeIana: homeBaseTimezone,
+        ),
+        cancel: () => alerts.cancelRange(
+          start: JetlagAlertChannel.caffeineIdStart,
+          count: JetlagAlertChannel.guideMaxCount,
+        ),
+      );
+      if (generation != _guideSyncGeneration || _disposed) return;
+
+      await _syncOneGuideKind(
+        enabled: mealAlertsEnabled,
+        generation: generation,
+        signature: () => _mealSignature,
+        setSignature: (value) => _mealSignature = value,
+        plan: () => planMealAlerts(
+          events: timeline.events,
+          nowUtc: now(),
+          localIana: schedule.localTimeZone,
+          homeIana: homeBaseTimezone,
+        ),
+        cancel: () => alerts.cancelRange(
+          start: JetlagAlertChannel.mealIdStart,
+          count: JetlagAlertChannel.guideMaxCount,
+        ),
+      );
+      if (generation != _guideSyncGeneration || _disposed) return;
+
+      await _syncOneGuideKind(
+        enabled: bedAlertsEnabled,
+        generation: generation,
+        signature: () => _bedSignature,
+        setSignature: (value) => _bedSignature = value,
+        plan: () => planBedAlerts(
+          events: timeline.events,
+          nowUtc: now(),
+          localIana: schedule.localTimeZone,
+          homeIana: homeBaseTimezone,
+        ),
+        cancel: () => alerts.cancelRange(
+          start: JetlagAlertChannel.bedIdStart,
+          count: JetlagAlertChannel.guideMaxCount,
+        ),
+      );
+    } catch (error, stack) {
+      debugPrint('jetlag guide alert sync failed: $error\n$stack');
+    }
+  }
+
+  Future<void> _syncOneGuideKind({
+    required bool enabled,
+    required int generation,
+    required String? Function() signature,
+    required void Function(String? value) setSignature,
+    required List<GuideAlert> Function() plan,
+    required Future<void> Function() cancel,
+  }) async {
+    if (!enabled) {
+      if (signature() == null) return;
+      await cancel();
+      if (generation != _guideSyncGeneration || _disposed) return;
+      setSignature(null);
       return;
     }
-    final fireAt = pickup.subtract(JetlagAlertChannel.pickupLead);
-    if (!fireAt.isAfter(now())) {
-      await alerts.cancel(id: id);
-      return;
+    final planned = plan();
+    final nextSignature = guideAlertSignature(planned);
+    if (nextSignature == signature()) return;
+    await cancel();
+    if (generation != _guideSyncGeneration || _disposed) return;
+    for (final alert in planned) {
+      if (generation != _guideSyncGeneration || _disposed) return;
+      await alerts.scheduleAlert(
+        id: alert.id,
+        whenUtc: alert.whenUtc,
+        title: alert.title,
+        body: alert.body,
+      );
     }
-    await alerts.schedulePickupReminder(
-      id: id,
-      whenUtc: fireAt,
-      title: '픽업 준비',
-      body: '${schedule.stationLabel} 픽업 90분 전입니다.',
+    if (generation != _guideSyncGeneration || _disposed) return;
+    setSignature(nextSignature);
+  }
+
+  Future<void> _cancelAllGuideAlerts() async {
+    await alerts.cancelRange(
+      start: JetlagAlertChannel.caffeineIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
+    );
+    await alerts.cancelRange(
+      start: JetlagAlertChannel.mealIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
+    );
+    await alerts.cancelRange(
+      start: JetlagAlertChannel.bedIdStart,
+      count: JetlagAlertChannel.guideMaxCount,
     );
   }
 
-  Future<void> _writeEnabled(bool enabled) async {
+  Future<void> _cancelLegacyAlerts() async {
+    try {
+      await alerts.cancel(id: JetlagAlertChannel.pickupNotificationId);
+      await alerts.cancelRange(
+        start: JetlagAlertChannel.wakeIdStart,
+        count: JetlagAlertChannel.wakeMaxCount,
+      );
+    } catch (error, stack) {
+      debugPrint('jetlag legacy alert cancel failed: $error\n$stack');
+    }
+  }
+
+  Future<void> _writeBool(String key, bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(JetlagAlertChannel.enabledKey, enabled);
+    await prefs.setBool(key, enabled);
   }
 
   void _onHomeBaseChanged() {
@@ -458,6 +723,7 @@ class JetlagGuideController extends ChangeNotifier {
     if (_disposed) return;
     _timeline = _schedule == null ? null : _safeTimeline();
     notifyListeners();
+    unawaited(_syncGuideAlerts());
   }
 
   Future<T> _lock<T>(Future<T> Function() action) {

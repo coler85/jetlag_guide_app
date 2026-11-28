@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/crew_log.dart';
@@ -19,6 +20,10 @@ class TimelinePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeline = controller.timeline;
     final schedule = timeline.schedule;
+    final showClock =
+        defaultTargetPlatform == TargetPlatform.android &&
+        controller.clockAlarms.isSupported;
+    final nextWake = showClock ? controller.nextClockWake : null;
     final page = StickyTimeline(
       header: CollapsingGuideHeader(
         clock: controller.now,
@@ -39,6 +44,19 @@ class TimelinePage extends StatelessWidget {
       onBunk: controller.selectBunk,
       onDismissLog: (id) => controller.removeLog(id),
       onEditLoggedSleep: (id) => _editSleep(context, id),
+      clockAlarmWakeUtc: nextWake != null && nextWake.active
+          ? nextWake.whenUtc
+          : null,
+      onRegisterClockAlarm: nextWake != null && nextWake.active
+          ? () {
+              unawaited(
+                controller.registerClockAlarm(
+                  whenUtc: nextWake.whenUtc,
+                  message: nextWake.message,
+                ),
+              );
+            }
+          : null,
       lifestyle: controller.lifestyle,
       settings: controller.settings,
     );
